@@ -9,12 +9,17 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateProjectResourceDto
     {
-        [Required]
-        public string Name { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Le nom de la ressource est obligatoire.")]
+        [MaxLength(150)]
+        public string ItemName { get; set; } = string.Empty;
 
-        public decimal PricePerUnit { get; set; }
-        public int Quantity { get; set; }
+        [Range(0, double.MaxValue)]
+        public decimal PricePerUnit { get; set; } = 0;
 
-        public Guid? CostCenterId { get; set; }
+        [Range(0, int.MaxValue)]
+        public int Quantity { get; set; } = 0;
+
+        [MaxLength(100)]
+        public string? CostCenter { get; set; }
     }
 }

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PMHUB.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using PMHUB.Infrastructure.Persistence;
 namespace PMHUB.Infrastructure.Migrations
 {
     [DbContext(typeof(PMHubDbContext))]
-    partial class PMHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260305172522_InitialCreate12")]
+    partial class InitialCreate12
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -388,8 +391,9 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<int>("ProgressPercentage")
                         .HasColumnType("int");
 
-                    b.Property<int>("ProjectManagementType")
-                        .HasColumnType("int");
+                    b.Property<string>("ProjectManagementType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ProjectManager")
                         .HasMaxLength(150)
