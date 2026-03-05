@@ -34,30 +34,24 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectDto> CreateAsync(CreateFullProjectDto dto)
     {
-        // Vérifier département
-        var department = await _departmentRepository.GetByIdAsync(dto.DepartmentId)
+         var department = await _departmentRepository.GetByIdAsync(dto.DepartmentId)
             ?? throw new NotFoundException("Department", dto.DepartmentId);
 
-        // Vérifier doublon
-        var existing = await _projectRepository.FindAsync(
+         var existing = await _projectRepository.FindAsync(
             p => p.Name == dto.Name && p.DepartmentId == dto.DepartmentId);
         if (existing.Any())
             throw new ConflictException("Project", dto.Name);
 
-        // ✅ Validation dates — délégué au Validator
-        ProjectValidator.ValidateDates(dto);
+         ProjectValidator.ValidateDates(dto);
 
-        // ✅ Charger parent si nécessaire
-        Project? parentProject = null;
+         Project? parentProject = null;
         if (dto.ParentProjectId.HasValue)
             parentProject = await _projectRepository.GetByIdWithIncludesAsync(
                 dto.ParentProjectId.Value);
 
-        // ✅ Validation type — délégué au Validator
-        ProjectValidator.ValidateManagementType(dto, parentProject);
+         ProjectValidator.ValidateManagementType(dto, parentProject);
 
-        // ✅ Héritage du parent si type 2 ou 3
-        if (parentProject != null &&
+         if (parentProject != null &&
             dto.ProjectManagementType is ProjectManagementType.NewPhase
                 or ProjectManagementType.Extension)
         {
@@ -66,17 +60,14 @@ public class ProjectService : IProjectService
                 ?? department;
         }
 
-        // Construire le projet
-        var project = BuildProject(dto);
+         var project = BuildProject(dto);
 
-        // ✅ Lier les relations
-        await AttachRelationsAsync(project, dto);
+         await AttachRelationsAsync(project, dto);
 
         await _projectRepository.AddAsync(project);
         await _projectRepository.SaveChangesAsync();
 
-        // ✅ Recharger avec includes pour le mapper
-        var created = await _projectRepository.GetByIdWithIncludesAsync(project.Id);
+         var created = await _projectRepository.GetByIdWithIncludesAsync(project.Id);
         return ProjectMapper.ToDto(created!, department);
     }
 
@@ -117,8 +108,7 @@ public class ProjectService : IProjectService
                     "Un projet ne peut pas être son propre parent.");
         }
 
-        // Mettre à jour
-        project.Name = dto.Name;
+         project.Name = dto.Name;
         project.Description = dto.Description;
         project.DepartmentId = dto.DepartmentId;
         project.Budget = dto.Budget;
@@ -147,8 +137,7 @@ public class ProjectService : IProjectService
         project.StrategicScore = dto.StrategicScore;
         project.UpdatedAt = DateTime.UtcNow;
 
-        // Remplacer relations
-        project.ProjectBusinessUnits.Clear();
+         project.ProjectBusinessUnits.Clear();
         foreach (var buId in dto.BusinessUnitIds)
         {
             await (_businessUnitRepository.GetByIdAsync(buId)
@@ -299,8 +288,7 @@ public class ProjectService : IProjectService
         await _projectRepository.SaveChangesAsync();
     }
 
-    // ── Helpers privés ────────────────────────────────────────
-    private static Project BuildProject(CreateFullProjectDto dto) => new()
+     private static Project BuildProject(CreateFullProjectDto dto) => new()
     {
         Name = dto.Name,
         Description = dto.Description,
