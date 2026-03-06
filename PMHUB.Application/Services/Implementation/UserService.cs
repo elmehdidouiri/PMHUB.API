@@ -41,7 +41,7 @@ namespace PMHUB.Application.Services
             return MapToDto(user);
         }
 
-        public async Task<UserDto?> GetByIdAsync(Guid id)
+        public async Task<UserDto> GetByIdAsync(Guid id)
         {
             var user = await _userRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("User", id);
@@ -105,7 +105,7 @@ namespace PMHUB.Application.Services
                 ?? throw new NotFoundException("User", userId);
 
             // Vérifier si l'utilisateur a des projets actifs
-            if (user.Projects.Any())
+            if (user.ProjectMembers.Any())
                 throw new BadRequestException(
                     "Impossible de supprimer cet utilisateur car il est assigné à des projets actifs.");
 

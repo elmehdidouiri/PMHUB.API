@@ -29,7 +29,7 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<UserDto>>> GetById(Guid id)
         {
             var user = await _userService.GetByIdAsync(id);
-            return Ok(ApiResponse<UserDto>.Ok(user));
+            return Ok(ApiResponse<UserDto>.Ok(user!));
         }
 
         // POST api/users

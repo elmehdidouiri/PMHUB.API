@@ -117,13 +117,12 @@ namespace PMHUB.API.Controllers
         }
 
         // POST api/projects/{id}/members/{userId}
-        [HttpPost("{id:guid}/members/{userId:guid}")]
-        public async Task<ActionResult<ApiResponse>> AddMember(Guid id, Guid userId)
+         [HttpPost("{id:guid}/members")]
+        public async Task<ActionResult<ApiResponse>> AddMember(Guid id, [FromBody] AddProjectMemberDto dto)
         {
-            await _service.AddMemberAsync(id, userId);
+            await _service.AddMemberAsync(id, dto.UserId, dto.ProjectRole);
             return Ok(ApiResponse.Ok("Membre ajouté au projet avec succès."));
         }
-
         // DELETE api/projects/{id}/members/{userId}
         [HttpDelete("{id:guid}/members/{userId:guid}")]
         public async Task<ActionResult<ApiResponse>> RemoveMember(Guid id, Guid userId)

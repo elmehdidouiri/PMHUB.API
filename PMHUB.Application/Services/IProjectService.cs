@@ -11,7 +11,8 @@ namespace PMHUB.Application.Services
         Task<ProjectDto> UpdateAsync(Guid id, UpdateProjectDto dto);
         Task DeleteAsync(Guid id);
 
-         Task<IEnumerable<ProjectSummaryDto>> GetByDepartmentAsync(Guid departmentId);
+        Task AddMemberAsync(Guid projectId, Guid userId, RoleType projectRole);
+        Task<IEnumerable<ProjectSummaryDto>> GetByDepartmentAsync(Guid departmentId);
         Task<IEnumerable<ProjectSummaryDto>> GetByBusinessUnitAsync(Guid businessUnitId);
         Task<IEnumerable<ProjectSummaryDto>> GetByPlantAsync(Guid plantId);
         Task<IEnumerable<ProjectSummaryDto>> GetByStatusAsync(ProjectStatus status);
@@ -19,7 +20,6 @@ namespace PMHUB.Application.Services
 
          Task<ProjectDto> AddSubProjectAsync(Guid parentId, CreateSubProjectDto dto);
 
-         Task AddMemberAsync(Guid projectId, Guid userId);
-        Task RemoveMemberAsync(Guid projectId, Guid userId);
+         Task RemoveMemberAsync(Guid projectId, Guid userId);
     }
 }

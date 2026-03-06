@@ -3,7 +3,7 @@ using PMHUB.Domain.Enums;
 
 namespace PMHUB.Application.DTOs
 {
-    public class UpdateProjectDto
+    public class UpdateProjectDto 
     {
         [Required(ErrorMessage = "Le nom est obligatoire.")]
         [StringLength(150, ErrorMessage = "Le nom ne peut pas dépasser 150 caractères.")]
@@ -33,9 +33,11 @@ namespace PMHUB.Application.DTOs
 
         public ProcessStatus ProcessStatus { get; set; } = ProcessStatus.NotStarted;
 
+        [Required(ErrorMessage = "Le type de projet est obligatoire.")]
+        public ProjectManagementType ProjectManagementType { get; set; }
+
         public Guid? ParentProjectId { get; set; }
 
-        // Informations projet
         [MaxLength(150)]
         public string? ProjectManager { get; set; }
 
@@ -63,9 +65,6 @@ namespace PMHUB.Application.DTOs
         [MaxLength(150)]
         public string? ServerHostName { get; set; }
 
-        [Required(ErrorMessage = "Le type de projet est obligatoire.")]
-        public ProjectManagementType ProjectManagementType { get; set; }
-
         [MaxLength(1000)]
         public string? CurrentState { get; set; }
 
@@ -81,12 +80,13 @@ namespace PMHUB.Application.DTOs
         [Range(0, double.MaxValue, ErrorMessage = "Les heures estimées doivent être positives.")]
         public decimal EstimatedHours { get; set; } = 0;
 
-        [Range(0, double.MaxValue, ErrorMessage = "Le score stratégique doit être positif.")]
-        public decimal StrategicScore { get; set; } = 0;
+        public ICollection<CreateStrategicCriterionDto> StrategicCriteria { get; set; }
+            = new List<CreateStrategicCriterionDto>();
 
          public ICollection<Guid> BusinessUnitIds { get; set; } = new List<Guid>();
         public ICollection<Guid> TechnologyIds { get; set; } = new List<Guid>();
         public ICollection<Guid> SolutionDomainIds { get; set; } = new List<Guid>();
-        public ICollection<Guid> MemberIds { get; set; } = new List<Guid>();
+        public ICollection<CreateProjectMemberDto> Members { get; set; }
+              = new List<CreateProjectMemberDto>();
     }
 }

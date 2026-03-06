@@ -17,7 +17,6 @@ namespace PMHUB.Domain.Enums
         StrategicEvaluation,
         OnePager,
         SharePoint,
-        SAPApproval,
-        Other
+        SAPApproval 
     }
 }

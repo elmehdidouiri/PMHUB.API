@@ -68,16 +68,14 @@ public class CreateFullProjectDto
 
     public decimal EstimatedHours { get; set; } = 0;
  
-    public decimal StrategicScore { get; set; } = 0;
-
+ 
     public Guid? ParentProjectId { get; set; }
 
      public ICollection<Guid> BusinessUnitIds { get; set; } = new List<Guid>();
     public ICollection<Guid> TechnologyIds { get; set; } = new List<Guid>();
     public ICollection<Guid> SolutionDomainIds { get; set; } = new List<Guid>();
-    public ICollection<Guid> MemberIds { get; set; } = new List<Guid>();
-
-     public ICollection<CreateSubProjectDto> SubProjects { get; set; } = new List<CreateSubProjectDto>();
+    public ICollection<CreateProjectMemberDto> Members { get; set; }
+        = new List<CreateProjectMemberDto>();
     public ICollection<CreateProjectResourceDto> ProjectResources { get; set; } = new List<CreateProjectResourceDto>();
     public ICollection<CreateStrategicCriterionDto> StrategicCriteria { get; set; } = new List<CreateStrategicCriterionDto>();
     public ICollection<CreateProjectAllocationDto> Allocations { get; set; } = new List<CreateProjectAllocationDto>();

@@ -38,8 +38,9 @@ namespace PMHUB.Domain.Entities
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
 
-        public ICollection<Project> Projects { get; set; } = new List<Project>();
-        public ICollection<HourEntry> HourEntries { get; set; } = new List<HourEntry>();
+         public ICollection<HourEntry> HourEntries { get; set; } = new List<HourEntry>();
         public ICollection<Report> Reports { get; set; } = new List<Report>();
+        public ICollection<ProjectMember> ProjectMembers { get; set; } = new List<ProjectMember>();
+
     }
 }

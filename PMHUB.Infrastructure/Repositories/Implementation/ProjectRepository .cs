@@ -2,9 +2,7 @@
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Persistence;
 using PMHUB.Infrastructure.Repositories.Generique;
-using System;
 using System.Linq.Expressions;
-using System.Threading.Tasks;
 
 namespace PMHUB.Infrastructure.Repositories
 {
@@ -16,36 +14,37 @@ namespace PMHUB.Infrastructure.Repositories
         {
             _context = context;
         }
-        private IQueryable<Project> WithIncludes() =>
-        _context.Projects
-            .Include(p => p.Department)
-                .ThenInclude(d => d!.BusinessUnit)
-            .Include(p => p.Department)
-                .ThenInclude(d => d!.Plant)
-            .Include(p => p.ProjectBusinessUnits)
-                .ThenInclude(pbu => pbu.BusinessUnit)
-            .Include(p => p.ProjectTechnologies)
-                .ThenInclude(pt => pt.Technology)
-            .Include(p => p.ProjectSolutionDomains)
-                .ThenInclude(psd => psd.SolutionDomain)
-            .Include(p => p.Members)
-            .Include(p => p.KPIs)
-            .Include(p => p.ProjectResources)
-            .Include(p => p.SubProjects)
-                .ThenInclude(sp => sp.Department)
-            .Include(p => p.ParentProject)
-            .Include(p => p.ProjectAllocations);
 
-        public async Task<Project?> GetByNameAsync(string name)
-        {
-            return await _context.Projects
+        private IQueryable<Project> WithIncludes() =>
+            _context.Projects
+                .Include(p => p.Department)
+                    .ThenInclude(d => d!.BusinessUnit)
+                .Include(p => p.Department)
+                    .ThenInclude(d => d!.Plant)
+                .Include(p => p.ProjectBusinessUnits)
+                    .ThenInclude(pbu => pbu.BusinessUnit)
+                .Include(p => p.ProjectTechnologies)
+                    .ThenInclude(pt => pt.Technology)
+                .Include(p => p.ProjectSolutionDomains)
+                    .ThenInclude(psd => psd.SolutionDomain)
+                // ✅ Members → ProjectMembers avec User
+                .Include(p => p.ProjectMembers)
+                    .ThenInclude(pm => pm.User)
+                .Include(p => p.KPIs)
+                .Include(p => p.ProjectResources)
+                .Include(p => p.StrategicCriteria)
+                .Include(p => p.SubProjects)
+                    .ThenInclude(sp => sp.Department)
+                .Include(p => p.ParentProject)
+                .Include(p => p.ProjectAllocations);
+
+        public async Task<Project?> GetByNameAsync(string name) =>
+            await _context.Projects
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Name == name);
-        }
 
-        public async Task<Project?> GetFullProjectByIdAsync(Guid id)
-        {
-            return await _context.Projects
+        public async Task<Project?> GetFullProjectByIdAsync(Guid id) =>
+            await _context.Projects
                 .Include(p => p.SubProjects)
                 .Include(p => p.Tasks)
                     .ThenInclude(t => t.AssignedUser)
@@ -56,13 +55,17 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(p => p.KPIs)
                 .Include(p => p.ProjectResources)
                 .Include(p => p.ProjectTechnologies)
+                    .ThenInclude(pt => pt.Technology)
                 .Include(p => p.ProjectBusinessUnits)
+                    .ThenInclude(pbu => pbu.BusinessUnit)
                 .Include(p => p.ProjectSolutionDomains)
+                    .ThenInclude(psd => psd.SolutionDomain)
                 .Include(p => p.StrategicCriteria)
+                // ✅ Members → ProjectMembers
+                .Include(p => p.ProjectMembers)
+                    .ThenInclude(pm => pm.User)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == id);
-        }
-        
 
         public async Task<Project?> GetByIdWithIncludesAsync(Guid id) =>
             await WithIncludes()

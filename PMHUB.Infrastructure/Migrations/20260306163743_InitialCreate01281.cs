@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PMHUB.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitialCreate01281 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -68,22 +68,6 @@ namespace PMHUB.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_SolutionDomains", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Sprints",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    EndDate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Sprints", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -233,7 +217,25 @@ namespace PMHUB.Infrastructure.Migrations
                     Phase = table.Column<int>(type: "int", nullable: false),
                     StartDate = table.Column<DateTime>(type: "datetime2", nullable: false),
                     EndDate = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    EstimatedDueDate = table.Column<DateTime>(type: "datetime2", nullable: true),
                     Budget = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    ProjectManager = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
+                    Sponsor = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
+                    DigitalContribution = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    CostCenter = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    CostSaving = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    ProgressPercentage = table.Column<int>(type: "int", nullable: false),
+                    CodeSourceLink = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    SolutionLink = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    ServerHostName = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
+                    ProjectManagementType = table.Column<int>(type: "int", nullable: false),
+                    ProcessStatus = table.Column<int>(type: "int", nullable: false),
+                    CurrentState = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    Roadblocks = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    NextSteps = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    Enhancements = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    EstimatedHours = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    StrategicScore = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()"),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     DepartmentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -426,12 +428,12 @@ namespace PMHUB.Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ItemName = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: false),
                     PricePerUnit = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     Quantity = table.Column<int>(type: "int", nullable: false),
-                    CostCenter = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CostCenter = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()"),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -493,6 +495,30 @@ namespace PMHUB.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Sprints",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    EndDate = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Sprints", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Sprints_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "StrategicCriteria",
                 columns: table => new
                 {
@@ -520,16 +546,16 @@ namespace PMHUB.Infrastructure.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Status = table.Column<int>(type: "int", nullable: false),
                     StartDate = table.Column<DateTime>(type: "datetime2", nullable: true),
                     EndDate = table.Column<DateTime>(type: "datetime2", nullable: true),
                     ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SprintId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     AssignedUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    SprintId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -544,7 +570,8 @@ namespace PMHUB.Infrastructure.Migrations
                         name: "FK_Tasks_Sprints_SprintId",
                         column: x => x.SprintId,
                         principalTable: "Sprints",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_Tasks_Users_AssignedUserId",
                         column: x => x.AssignedUserId,
@@ -562,6 +589,7 @@ namespace PMHUB.Infrastructure.Migrations
                     InternAllocationId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     ProjectId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     TaskId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    SprintId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     Hours = table.Column<decimal>(type: "decimal(5,2)", nullable: false),
                     AllocationType = table.Column<int>(type: "int", nullable: false),
                     Date = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -590,10 +618,17 @@ namespace PMHUB.Infrastructure.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
+                        name: "FK_HourEntries_Sprints_SprintId",
+                        column: x => x.SprintId,
+                        principalTable: "Sprints",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
                         name: "FK_HourEntries_Tasks_TaskId",
                         column: x => x.TaskId,
                         principalTable: "Tasks",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_HourEntries_Users_UserId",
                         column: x => x.UserId,
@@ -631,6 +666,11 @@ namespace PMHUB.Infrastructure.Migrations
                 name: "IX_HourEntries_ProjectId",
                 table: "HourEntries",
                 column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HourEntries_SprintId",
+                table: "HourEntries",
+                column: "SprintId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_HourEntries_TaskId",
@@ -733,6 +773,11 @@ namespace PMHUB.Infrastructure.Migrations
                 column: "CreatedById");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Sprints_ProjectId",
+                table: "Sprints",
+                column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StrategicCriteria_ProjectId",
                 table: "StrategicCriteria",
                 column: "ProjectId");
@@ -819,10 +864,10 @@ namespace PMHUB.Infrastructure.Migrations
                 name: "Technologies");
 
             migrationBuilder.DropTable(
-                name: "Projects");
+                name: "Sprints");
 
             migrationBuilder.DropTable(
-                name: "Sprints");
+                name: "Projects");
 
             migrationBuilder.DropTable(
                 name: "Departments");

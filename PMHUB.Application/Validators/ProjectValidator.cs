@@ -2,16 +2,12 @@
 using PMHUB.Application.Exceptions;
 using PMHUB.Domain.Entities;
 using PMHUB.Domain.Enums;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace PMHUB.Application.Validators
 {
     public class ProjectValidator
     {
+        // ── Validation dates ──────────────────────────────────
         public static void ValidateDates(CreateFullProjectDto dto)
         {
             if (dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
@@ -22,6 +18,7 @@ namespace PMHUB.Application.Validators
                 throw new BadRequestException(
                     "La date estimée doit être supérieure à la date de début.");
         }
+
         public static void ValidateDates(UpdateProjectDto dto)
         {
             if (dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
@@ -33,6 +30,7 @@ namespace PMHUB.Application.Validators
                     "La date estimée doit être supérieure à la date de début.");
         }
 
+        // ── Validation type de projet ─────────────────────────
         public static void ValidateManagementType(
             CreateFullProjectDto dto, Project? parentProject)
         {
@@ -62,13 +60,18 @@ namespace PMHUB.Application.Validators
             }
         }
 
-        public static void InheritFromParent(CreateFullProjectDto dto, Project parentProject)
+         public static void InheritFromParent(CreateFullProjectDto dto, Project parentProject)
         {
             dto.DepartmentId = parentProject.DepartmentId;
             dto.BusinessUnitIds = parentProject.ProjectBusinessUnits
                 .Select(pbu => pbu.BusinessUnitId).ToList();
-            dto.MemberIds = parentProject.Members
-                .Select(m => m.Id).ToList();
+
+             dto.Members = parentProject.ProjectMembers
+                .Select(pm => new CreateProjectMemberDto
+                {
+                    UserId = pm.UserId,
+                    ProjectRole = pm.ProjectRole
+                }).ToList();
         }
     }
 }

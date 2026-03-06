@@ -1,4 +1,5 @@
-﻿using System;
+﻿using PMHUB.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -9,10 +10,14 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateStrategicCriterionDto
     {
-        [Required]
-        public string Name { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Le type de critère est obligatoire.")]
+        public StrategicCriterionType Type { get; set; }
 
-        [Range(1, 5)]
-        public int Score { get; set; } // 1 = Low, 3 = Medium, 5 = High
+        [Required(ErrorMessage = "Le score est obligatoire.")]
+        public StrategicCriterionScore Score { get; set; } = StrategicCriterionScore.Low;
+
+        [MaxLength(500)]
+        public string? Comment { get; set; }
     }
+
 }

@@ -16,6 +16,15 @@ namespace PMHUB.Application.DTOs
 
         public ProcessStatus ProcessStatus { get; set; }
         public string ProcessStatusLabel => ProcessStatus.ToString();
+        public decimal StrategicScore { get; set; }
+
+        public string StrategicCategory => StrategicScore switch
+        {
+            < 15 => "Operational Project",
+            < 25 => "Tactical Project",
+            < 35 => "Moderately Strategic",
+            _ => "Highly Strategic"
+        };
 
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
@@ -27,8 +36,7 @@ namespace PMHUB.Application.DTOs
         public decimal DigitalContribution { get; set; }
         public decimal CostSaving { get; set; }
         public decimal EstimatedHours { get; set; }
-        public decimal StrategicScore { get; set; }
-        public int ProgressPercentage { get; set; }
+         public int ProgressPercentage { get; set; }
 
         public string? ProjectManager { get; set; }
         public string? Sponsor { get; set; }
@@ -54,11 +62,14 @@ namespace PMHUB.Application.DTOs
          public ICollection<string> BusinessUnits { get; set; } = new List<string>();
         public ICollection<string> Technologies { get; set; } = new List<string>();
         public ICollection<string> SolutionDomains { get; set; } = new List<string>();
-        public ICollection<string> Members { get; set; } = new List<string>();
+        public ICollection<ProjectMemberDto> Members { get; set; } = new List<ProjectMemberDto>();
 
-         public ICollection<KpiDto> KPIs { get; set; } = new List<KpiDto>();
+        public ICollection<KpiDto> KPIs { get; set; } = new List<KpiDto>();
 
          public ICollection<ProjectResourceDto> ProjectResources { get; set; } = new List<ProjectResourceDto>();
         public ICollection<ProjectSummaryDto> SubProjects { get; set; } = new List<ProjectSummaryDto>();
+        public ICollection<StrategicCriterionDto> StrategicCriteria { get; set; }
+    = new List<StrategicCriterionDto>();
+
     }
 }

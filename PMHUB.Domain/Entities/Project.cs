@@ -90,9 +90,11 @@ namespace PMHUB.Domain.Entities
          public ICollection<ProjectBusinessUnit> ProjectBusinessUnits { get; set; } = new List<ProjectBusinessUnit>();
         public ICollection<ProjectTechnology> ProjectTechnologies { get; set; } = new List<ProjectTechnology>();
         public ICollection<ProjectSolutionDomain> ProjectSolutionDomains { get; set; } = new List<ProjectSolutionDomain>();
-        public ICollection<User> Members { get; set; } = new List<User>();
+        public ICollection<ProjectMember> ProjectMembers { get; set; } = new List<ProjectMember>();
+        public ICollection<Sprint> Sprints { get; set; } = new List<Sprint>();
 
-         public ICollection<ProjectTask> Tasks { get; set; } = new List<ProjectTask>();
+
+        public ICollection<ProjectTask> Tasks { get; set; } = new List<ProjectTask>();
         public ICollection<ProjectAllocation> ProjectAllocations { get; set; } = new List<ProjectAllocation>();
         public ICollection<InternAllocation> InternAllocations { get; set; } = new List<InternAllocation>();
         public ICollection<HourEntry> HourEntries { get; set; } = new List<HourEntry>();

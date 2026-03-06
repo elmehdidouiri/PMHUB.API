@@ -16,7 +16,7 @@ namespace PMHUB.Domain.Entities
         // Informations sur le fichier
         public string FileName { get; set; } = string.Empty;
         public string FileUrl { get; set; } = string.Empty;  
-        public ProjectFileType FileType { get; set; } = ProjectFileType.Other;
+        public ProjectFileType FileType { get; set; } = ProjectFileType.UAT;
         public string? Description { get; set; }
 
         

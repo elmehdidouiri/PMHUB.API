@@ -1,10 +1,5 @@
 ﻿using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace PMHUB.Application.Mappings
 {
@@ -52,14 +47,27 @@ namespace PMHUB.Application.Mappings
                 .Select(pt => pt.Technology?.Name ?? string.Empty).ToList(),
             SolutionDomains = p.ProjectSolutionDomains
                 .Select(psd => psd.SolutionDomain?.Name ?? string.Empty).ToList(),
-            Members = p.Members
-                .Select(m => $"{m.FirstName} {m.LastName}").ToList(),
+            // ✅ Members → ProjectMembers avec rôle
+            Members = p.ProjectMembers
+                .Select(pm => new ProjectMemberDto
+                {
+                    UserId = pm.UserId,
+                    FullName = $"{pm.User?.FirstName} {pm.User?.LastName}",
+                    ProjectRole = pm.ProjectRole,
+                    JoinedAt = pm.JoinedAt
+                }).ToList(),
+            // ✅ KPIs avec nouveaux champs
             KPIs = p.KPIs.Select(k => new KpiDto
             {
                 Id = k.Id,
                 Name = k.Name,
                 TargetValue = k.TargetValue,
                 CurrentValue = k.CurrentValue,
+                CalculatedValue = k.CalculatedValue,
+                EstimatedHours = k.EstimatedHours,
+                ActualHours = k.ActualHours,
+                EstimatedDueDate = k.EstimatedDueDate,
+                ActualEndDate = k.ActualEndDate,
                 Description = k.Description,
                 CreatedAt = k.CreatedAt,
                 UpdatedAt = k.UpdatedAt
@@ -74,6 +82,16 @@ namespace PMHUB.Application.Mappings
                 CostCenter = r.CostCenter,
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt
+            }).ToList(),
+            // ✅ StrategicCriteria ajouté
+            StrategicCriteria = p.StrategicCriteria.Select(sc => new StrategicCriterionDto
+            {
+                Id = sc.Id,
+                Type = sc.Type,
+                Score = sc.Score,
+                Comment = sc.Comment,
+                CreatedAt = sc.CreatedAt,
+                UpdatedAt = sc.UpdatedAt
             }).ToList(),
             SubProjects = p.SubProjects.Select(ToSummaryDto).ToList()
         };

@@ -5,7 +5,7 @@
 namespace PMHUB.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate128 : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

@@ -9,17 +9,15 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateKpiDto
     {
-        [Required(ErrorMessage = "Le nom du KPI est obligatoire.")]
-        [MaxLength(100)]
-        public string Name { get; set; } = string.Empty; 
+        [Required]
+        public string Name { get; set; } = string.Empty;
 
-        [Range(0, double.MaxValue)]
         public decimal TargetValue { get; set; } = 0;
-
-        [Range(0, double.MaxValue)]
         public decimal CurrentValue { get; set; } = 0;
-
-        [MaxLength(500)]
+        public DateTime? EstimatedDueDate { get; set; }
+        public DateTime? ActualEndDate { get; set; }
+        public decimal EstimatedHours { get; set; } = 0;
+        public decimal ActualHours { get; set; } = 0;
         public string? Description { get; set; }
     }
 }

@@ -8,13 +8,13 @@ namespace PMHUB.Domain.Enums
 {
     public enum StrategicCriterionType
     {
-        FinancialImpact,
-        CustomerImpact,
-        OperationalEfficiency,
-        StrategicAlignment,
-        CrossFunctionalImpact,
-        InnovationAndDigitalisation,
-        RiskMitigationAndUrgency,
-        SustainabilityAndESG
+        FinancialImpact = 1,
+        CustomerImpact = 2,
+        OperationalEfficiency = 3,
+        StrategicAlignment = 4,
+        CrossFunctionalImpact = 5,
+        InnovationDigitalisation = 6,
+        RiskMitigationUrgency = 7,
+        SustainabilityESG = 8
     }
 }
