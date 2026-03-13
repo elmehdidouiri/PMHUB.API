@@ -20,6 +20,7 @@ public class CreateFullProjectDto
 
     [Required(ErrorMessage = "La date de début est obligatoire.")]
     public DateTime StartDate { get; set; }
+    public Guid? ProjectManagerId { get; set; }
 
     public DateTime? EndDate { get; set; }
     public DateTime? EstimatedDueDate { get; set; }
@@ -28,8 +29,7 @@ public class CreateFullProjectDto
     public ProjectStatus Status { get; set; } = ProjectStatus.Ongoing;
     public ProcessStatus ProcessStatus { get; set; } = ProcessStatus.NotStarted;
 
-    [MaxLength(150)]
-    public string? ProjectManager { get; set; }
+ 
 
     [MaxLength(150)]
     public string? Sponsor { get; set; }

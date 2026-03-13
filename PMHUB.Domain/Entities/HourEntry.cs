@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using PMHUB.Domain.Enums;
-using PMHUB.Domain.Entities;
 
 namespace PMHUB.Domain.Entities
 {
@@ -12,22 +11,22 @@ namespace PMHUB.Domain.Entities
 
          public Guid? UserId { get; set; }
         [ForeignKey("UserId")]
-        public User? User { get; set; }
+        public NormalUser? User { get; set; }
 
         public Guid? InternAllocationId { get; set; }
         [ForeignKey("InternAllocationId")]
         public InternAllocation? InternAllocation { get; set; }
 
-         [Required]
+        [Required]
         public Guid ProjectId { get; set; }
         [ForeignKey("ProjectId")]
         public Project Project { get; set; } = null!;
 
-         public Guid? TaskId { get; set; }
+        public Guid? TaskId { get; set; }
         [ForeignKey("TaskId")]
         public ProjectTask? Task { get; set; }
 
-         public Guid? SprintId { get; set; }
+        public Guid? SprintId { get; set; }
         [ForeignKey("SprintId")]
         public Sprint? Sprint { get; set; }
 

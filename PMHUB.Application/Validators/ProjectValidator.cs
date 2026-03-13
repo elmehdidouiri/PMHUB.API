@@ -7,13 +7,11 @@ namespace PMHUB.Application.Validators
 {
     public class ProjectValidator
     {
-        // ── Validation dates ──────────────────────────────────
-        public static void ValidateDates(CreateFullProjectDto dto)
+         public static void ValidateDates(CreateFullProjectDto dto)
         {
             if (dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
                 throw new BadRequestException(
                     "La date de fin doit être supérieure à la date de début.");
-
             if (dto.EstimatedDueDate.HasValue && dto.EstimatedDueDate <= dto.StartDate)
                 throw new BadRequestException(
                     "La date estimée doit être supérieure à la date de début.");
@@ -24,14 +22,12 @@ namespace PMHUB.Application.Validators
             if (dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
                 throw new BadRequestException(
                     "La date de fin doit être supérieure à la date de début.");
-
             if (dto.EstimatedDueDate.HasValue && dto.EstimatedDueDate <= dto.StartDate)
                 throw new BadRequestException(
                     "La date estimée doit être supérieure à la date de début.");
         }
 
-        // ── Validation type de projet ─────────────────────────
-        public static void ValidateManagementType(
+         public static void ValidateManagementType(
             CreateFullProjectDto dto, Project? parentProject)
         {
             switch (dto.ProjectManagementType)
@@ -70,7 +66,7 @@ namespace PMHUB.Application.Validators
                 .Select(pm => new CreateProjectMemberDto
                 {
                     UserId = pm.UserId,
-                    ProjectRole = pm.ProjectRole
+                    RoleId = pm.RoleId
                 }).ToList();
         }
     }

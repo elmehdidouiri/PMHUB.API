@@ -11,8 +11,8 @@ namespace PMHUB.Application.DTOs
     {
         public Guid UserId { get; set; }
         public string FullName { get; set; } = string.Empty;
-        public RoleType ProjectRole { get; set; }
-        public string ProjectRoleLabel => ProjectRole.ToString();
-        public DateTime JoinedAt { get; set; }
+        public Guid RoleId { get; set; }
+        public string? RoleName { get; set; }
+         public DateTime JoinedAt { get; set; }
     }
 }

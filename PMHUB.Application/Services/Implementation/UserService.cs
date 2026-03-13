@@ -1,5 +1,7 @@
-﻿using PMHUB.Application.Exceptions;
+﻿using Microsoft.Extensions.Logging;
 using PMHUB.Application.DTOs;
+using PMHUB.Application.Exceptions;
+using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Repositories;
 using Task = System.Threading.Tasks.Task;
@@ -9,26 +11,41 @@ namespace PMHUB.Application.Services
     public class UserService : IUserService
     {
         private readonly IUserRepository _userRepository;
+        private readonly IRepository<Role> _roleRepository;
+        private readonly ILogger<UserService> _logger;
 
-        public UserService(IUserRepository userRepository)
+        public UserService(
+            IUserRepository userRepository,
+            IRepository<Role> roleRepository,
+            ILogger<UserService> logger)
         {
             _userRepository = userRepository;
+            _roleRepository = roleRepository;
+            _logger = logger;
         }
 
+        // ── CREATE 
         public async Task<UserDto> CreateUserAsync(CreateUserDto dto)
         {
-            // Vérifier doublon email
+            _logger.LogInformation("Création d'un utilisateur avec l'email {Email}", dto.Email);
+
             var existingUser = await _userRepository.GetByEmailAsync(dto.Email);
             if (existingUser != null)
+            {
+                _logger.LogWarning("L'utilisateur {Email} existe déjà", dto.Email);
                 throw new ConflictException("User", dto.Email);
+            }
 
-            var user = new User
+            await (_roleRepository.GetByIdAsync(dto.RoleId)
+                ?? throw new NotFoundException("Role", dto.RoleId));
+
+             var user = new NormalUser
             {
                 FirstName = dto.FirstName,
                 LastName = dto.LastName,
                 Email = dto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                Role = dto.Role,
+                RoleId = dto.RoleId,
                 IsApproved = false,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
@@ -38,21 +55,28 @@ namespace PMHUB.Application.Services
             await _userRepository.AddAsync(user);
             await _userRepository.SaveChangesAsync();
 
+            _logger.LogInformation("Utilisateur {UserId} créé avec succès", user.Id);
             return MapToDto(user);
         }
 
+        // ── GET BY ID 
         public async Task<UserDto> GetByIdAsync(Guid id)
         {
-            var user = await _userRepository.GetByIdAsync(id)
+            _logger.LogInformation("Récupération de l'utilisateur {UserId}", id);
+
+            var user = await _userRepository.GetByIdWithRoleAsync(id)
                 ?? throw new NotFoundException("User", id);
 
             return MapToDto(user);
         }
 
+        // ── GET BY EMAIL  
         public async Task<UserDto?> GetByEmailAsync(string email)
         {
             if (string.IsNullOrWhiteSpace(email))
                 throw new BadRequestException("L'email ne peut pas être vide.");
+
+            _logger.LogInformation("Récupération de l'utilisateur avec l'email {Email}", email);
 
             var user = await _userRepository.GetByEmailAsync(email)
                 ?? throw new NotFoundException("User", email);
@@ -60,24 +84,30 @@ namespace PMHUB.Application.Services
             return MapToDto(user);
         }
 
+        // ── GET ALL 
         public async Task<IEnumerable<UserDto>> GetAllAsync()
         {
-            var users = await _userRepository.GetAllAsync();
+            _logger.LogInformation("Récupération de tous les utilisateurs");
+            var users = await _userRepository.GetAllWithRoleAsync();
             return users.Select(MapToDto);
         }
 
+        // ── UPDATE 
         public async Task UpdateUserAsync(UpdateUserDto dto)
         {
-            var user = await _userRepository.GetByIdAsync(dto.Id)
+            _logger.LogInformation("Mise à jour de l'utilisateur {UserId}", dto.Id);
+
+             var user = await _userRepository.GetByIdAsync(dto.Id) as NormalUser
                 ?? throw new NotFoundException("User", dto.Id);
 
-            // Vérifier doublon email si changé
             if (!string.IsNullOrWhiteSpace(dto.Email) && dto.Email != user.Email)
             {
                 var emailExists = await _userRepository.GetByEmailAsync(dto.Email);
                 if (emailExists != null)
+                {
+                    _logger.LogWarning("L'email {Email} est déjà utilisé", dto.Email);
                     throw new ConflictException("User", dto.Email);
-
+                }
                 user.Email = dto.Email;
             }
 
@@ -87,8 +117,12 @@ namespace PMHUB.Application.Services
             if (!string.IsNullOrWhiteSpace(dto.LastName))
                 user.LastName = dto.LastName;
 
-            if (dto.Role.HasValue)
-                user.Role = dto.Role.Value;
+            if (dto.RoleId.HasValue)
+            {
+                await (_roleRepository.GetByIdAsync(dto.RoleId.Value)
+                    ?? throw new NotFoundException("Role", dto.RoleId.Value));
+                user.RoleId = dto.RoleId.Value;
+            }
 
             if (dto.IsActive.HasValue)
                 user.IsActive = dto.IsActive.Value;
@@ -97,29 +131,41 @@ namespace PMHUB.Application.Services
 
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Utilisateur {UserId} mis à jour avec succès", dto.Id);
         }
 
+        // ── DELETE 
         public async Task DeleteUserAsync(Guid userId)
         {
-            var user = await _userRepository.GetByIdAsync(userId)
+            _logger.LogInformation("Suppression de l'utilisateur {UserId}", userId);
+
+             var user = await _userRepository.GetByIdAsync(userId) as NormalUser
                 ?? throw new NotFoundException("User", userId);
 
-            // Vérifier si l'utilisateur a des projets actifs
             if (user.ProjectMembers.Any())
+            {
+                _logger.LogWarning("Impossible de supprimer l'utilisateur {UserId} car assigné à des projets", userId);
                 throw new BadRequestException(
                     "Impossible de supprimer cet utilisateur car il est assigné à des projets actifs.");
+            }
 
             _userRepository.Remove(user);
             await _userRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Utilisateur {UserId} supprimé avec succès", userId);
         }
 
+        // ── APPROVE 
         public async Task ApproveUserAsync(ApproveUserDto dto, Guid adminId)
         {
-            var user = await _userRepository.GetByIdAsync(dto.UserId)
+            _logger.LogInformation("Approbation de l'utilisateur {UserId} par l'admin {AdminId}",
+                dto.UserId, adminId);
+
+             var user = await _userRepository.GetByIdAsync(dto.UserId) as NormalUser
                 ?? throw new NotFoundException("User", dto.UserId);
 
-            // Vérifier que l'admin existe
-            var admin = await _userRepository.GetByIdAsync(adminId)
+             var admin = await _userRepository.GetByIdAsync(adminId) as Admin
                 ?? throw new NotFoundException("Admin", adminId);
 
             if (user.IsApproved && dto.IsApproved)
@@ -128,43 +174,59 @@ namespace PMHUB.Application.Services
             user.IsApproved = dto.IsApproved;
             user.ApprovedAt = DateTime.UtcNow;
             user.ApprovedById = adminId;
+            user.UpdatedAt = DateTime.UtcNow;
 
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Utilisateur {UserId} approuvé avec succès", dto.UserId);
         }
 
+        // ── VALIDATE LOGIN 
         public async Task<bool> ValidateLoginAsync(string email, string password)
         {
+            _logger.LogInformation("Validation de login pour l'email {Email}", email);
+
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
                 throw new BadRequestException("Email et mot de passe sont obligatoires.");
 
-            var user = await _userRepository.GetByEmailAsync(email);
+            var user = await _userRepository.GetByEmailAsync(email)
+                ?? throw new NotFoundException("User", email);
 
-            if (user == null)
-                throw new NotFoundException("User", email);
+             if (user is NormalUser normalUser)
+            {
+                if (!normalUser.IsActive)
+                    throw new ForbiddenException("Ce compte est désactivé.");
 
-            if (!user.IsActive)
-                throw new ForbiddenException("Ce compte est désactivé.");
-
-            if (!user.IsApproved)
-                throw new ForbiddenException("Ce compte n'est pas encore approuvé.");
+                if (!normalUser.IsApproved)
+                    throw new ForbiddenException("Ce compte n'est pas encore approuvé.");
+            }
 
             if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
                 throw new BadRequestException("Email ou mot de passe incorrect.");
 
+            _logger.LogInformation("Login validé pour l'utilisateur {UserId}", user.Id);
             return true;
         }
 
-        private static UserDto MapToDto(User user) => new()
+        // ── MAPPER 
+        private static UserDto MapToDto(User user)
         {
-            Id = user.Id,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            Email = user.Email,
-            Role = user.Role,
-            IsApproved = user.IsApproved,
-            IsActive = user.IsActive,
-            CreatedAt = user.CreatedAt
-        };
+             var normalUser = user as NormalUser;
+
+            return new UserDto
+            {
+                Id = user.Id,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Email = user.Email,
+                RoleId = normalUser?.RoleId ?? Guid.Empty,
+                RoleName = normalUser?.Role?.Name,
+                IsApproved = normalUser?.IsApproved ?? false,
+                IsActive = normalUser?.IsActive ?? false,
+                CreatedAt = user.CreatedAt,
+                UpdatedAt = user.UpdatedAt
+            };
+        }
     }
 }

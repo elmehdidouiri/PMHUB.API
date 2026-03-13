@@ -11,6 +11,7 @@ namespace PMHUB.Application.Mappings
             Name = p.Name,
             Description = p.Description,
             Status = p.Status,
+
             Phase = p.Phase,
             ProcessStatus = p.ProcessStatus,
             ProjectManagementType = p.ProjectManagementType,
@@ -18,7 +19,10 @@ namespace PMHUB.Application.Mappings
             EndDate = p.EndDate,
             EstimatedDueDate = p.EstimatedDueDate,
             Budget = p.Budget,
-            ProjectManager = p.ProjectManager,
+            ProjectManagerId = p.ProjectManagerId,
+            ProjectManagerName = p.ProjectManager != null
+            ? $"{p.ProjectManager.FirstName} {p.ProjectManager.LastName}"
+                             : null,
             Sponsor = p.Sponsor,
             DigitalContribution = p.DigitalContribution,
             CostCenter = p.CostCenter,
@@ -47,17 +51,16 @@ namespace PMHUB.Application.Mappings
                 .Select(pt => pt.Technology?.Name ?? string.Empty).ToList(),
             SolutionDomains = p.ProjectSolutionDomains
                 .Select(psd => psd.SolutionDomain?.Name ?? string.Empty).ToList(),
-            // ✅ Members → ProjectMembers avec rôle
-            Members = p.ProjectMembers
+             Members = p.ProjectMembers
                 .Select(pm => new ProjectMemberDto
                 {
                     UserId = pm.UserId,
                     FullName = $"{pm.User?.FirstName} {pm.User?.LastName}",
-                    ProjectRole = pm.ProjectRole,
+                    RoleId = pm.RoleId,
+                    RoleName = pm.Role?.Name,
                     JoinedAt = pm.JoinedAt
                 }).ToList(),
-            // ✅ KPIs avec nouveaux champs
-            KPIs = p.KPIs.Select(k => new KpiDto
+             KPIs = p.KPIs.Select(k => new KpiDto
             {
                 Id = k.Id,
                 Name = k.Name,
@@ -75,6 +78,7 @@ namespace PMHUB.Application.Mappings
             ProjectResources = p.ProjectResources.Select(r => new ProjectResourceDto
             {
                 Id = r.Id,
+                ProjectId = p.Id,
                 ItemName = r.ItemName,
                 PricePerUnit = r.PricePerUnit,
                 Quantity = r.Quantity,
@@ -83,8 +87,7 @@ namespace PMHUB.Application.Mappings
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt
             }).ToList(),
-            // ✅ StrategicCriteria ajouté
-            StrategicCriteria = p.StrategicCriteria.Select(sc => new StrategicCriterionDto
+             StrategicCriteria = p.StrategicCriteria.Select(sc => new StrategicCriterionDto
             {
                 Id = sc.Id,
                 Type = sc.Type,

@@ -21,7 +21,7 @@ namespace PMHUB.Application.DTOs
 
         [Required(ErrorMessage = "La date de début est obligatoire.")]
         public DateTime StartDate { get; set; }
-
+        public Guid? ProjectManagerId { get; set; }
         public DateTime? EndDate { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
 
@@ -37,9 +37,6 @@ namespace PMHUB.Application.DTOs
         public ProjectManagementType ProjectManagementType { get; set; }
 
         public Guid? ParentProjectId { get; set; }
-
-        [MaxLength(150)]
-        public string? ProjectManager { get; set; }
 
         [MaxLength(150)]
         public string? Sponsor { get; set; }

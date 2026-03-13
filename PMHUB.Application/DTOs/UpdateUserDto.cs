@@ -17,7 +17,8 @@ namespace PMHUB.Application.DTOs
         [EmailAddress(ErrorMessage = "Format d'email invalide.")]
         public string? Email { get; set; }
 
-        public RoleType? Role { get; set; }
+        public Guid? RoleId { get; set; }
+        public string? RoleName { get; set; }
         public bool? IsActive { get; set; }
     }
 }

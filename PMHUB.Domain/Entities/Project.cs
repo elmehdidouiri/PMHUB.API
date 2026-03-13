@@ -31,8 +31,9 @@ namespace PMHUB.Domain.Entities
         [Column(TypeName = "decimal(18,2)")]
         public decimal Budget { get; set; }
 
-         [MaxLength(150)]
-        public string? ProjectManager { get; set; }
+        public Guid? ProjectManagerId { get; set; }
+        [ForeignKey("ProjectManagerId")]
+        public NormalUser? ProjectManager { get; set; }
 
         [MaxLength(150)]
         public string? Sponsor { get; set; }

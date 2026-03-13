@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Persistence;
 using PMHUB.Infrastructure.Repositories.Generique;
@@ -27,9 +28,9 @@ namespace PMHUB.Infrastructure.Repositories
                     .ThenInclude(pt => pt.Technology)
                 .Include(p => p.ProjectSolutionDomains)
                     .ThenInclude(psd => psd.SolutionDomain)
-                // ✅ Members → ProjectMembers avec User
                 .Include(p => p.ProjectMembers)
                     .ThenInclude(pm => pm.User)
+                 .Include(p => p.ProjectManager)
                 .Include(p => p.KPIs)
                 .Include(p => p.ProjectResources)
                 .Include(p => p.StrategicCriteria)
@@ -61,9 +62,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(p => p.ProjectSolutionDomains)
                     .ThenInclude(psd => psd.SolutionDomain)
                 .Include(p => p.StrategicCriteria)
-                // ✅ Members → ProjectMembers
                 .Include(p => p.ProjectMembers)
                     .ThenInclude(pm => pm.User)
+                 .Include(p => p.ProjectManager)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == id);
 
@@ -83,5 +84,43 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(predicate)
                 .ToListAsync();
-    }
+    
+    public async Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(
+    PaginationQueryDto query)
+        {
+            var queryable = WithIncludes().AsNoTracking();
+
+             if (!string.IsNullOrWhiteSpace(query.Search))
+                queryable = queryable.Where(p =>
+                    p.Name.Contains(query.Search) ||
+                    (p.Description != null && p.Description.Contains(query.Search)) ||
+                    (p.Sponsor != null && p.Sponsor.Contains(query.Search)));
+
+             queryable = query.SortBy?.ToLower() switch
+            {
+                "name" => query.SortDescending
+                                ? queryable.OrderByDescending(p => p.Name)
+                                : queryable.OrderBy(p => p.Name),
+                "status" => query.SortDescending
+                                ? queryable.OrderByDescending(p => p.Status)
+                                : queryable.OrderBy(p => p.Status),
+                "createdat" => query.SortDescending
+                                ? queryable.OrderByDescending(p => p.CreatedAt)
+                                : queryable.OrderBy(p => p.CreatedAt),
+                "budget" => query.SortDescending
+                                ? queryable.OrderByDescending(p => p.Budget)
+                                : queryable.OrderBy(p => p.Budget),
+                _ => queryable.OrderByDescending(p => p.CreatedAt)
+            };
+
+            var totalCount = await queryable.CountAsync();
+
+            var items = await queryable
+               .Skip((query.PageNumber - 1) * query.PageSize)
+               .Take(query.PageSize)
+               .ToListAsync();
+
+            return (items, totalCount);
+        }
+    } 
 }

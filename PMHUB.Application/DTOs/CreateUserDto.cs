@@ -27,6 +27,7 @@ namespace PMHUB.Application.DTOs
         public string Password { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Le rôle est obligatoire.")]
-        public RoleType Role { get; set; }
+        public Guid RoleId { get; set; }
+        public string? RoleName { get; set; }
     }
 }

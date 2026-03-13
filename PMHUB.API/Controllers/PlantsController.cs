@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
-using PMHUB.Application.Services;
+using PMHUB.Application.IServices;
 
 namespace PMHUB.API.Controllers
 {

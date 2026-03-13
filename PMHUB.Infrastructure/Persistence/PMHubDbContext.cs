@@ -8,10 +8,15 @@ namespace PMHUB.Infrastructure.Persistence
         public PMHubDbContext(DbContextOptions<PMHubDbContext> options)
             : base(options) { }
 
-        // ── Users ─────────────────────────────────────────────
+        // ── Users TPH ─────────────────────────────────────────
         public DbSet<User> Users { get; set; } = null!;
-        public DbSet<Admin> Admins { get; set; } = null!;
-        public DbSet<Management> Managements { get; set; } = null!;
+        public DbSet<NormalUser> NormalUsers { get; set; } = null!;
+        public DbSet<Admin> AdminUsers { get; set; } = null!;
+
+        // ── Roles ─────────────────────────────────────────────
+        public DbSet<Role> Roles { get; set; } = null!;
+
+        // ── Intern ────────────────────────────────────────────
         public DbSet<Intern> Interns { get; set; } = null!;
 
         // ── Core ──────────────────────────────────────────────
@@ -43,6 +48,7 @@ namespace PMHUB.Infrastructure.Persistence
         public DbSet<ProjectSolutionDomain> ProjectSolutionDomains { get; set; } = null!;
         public DbSet<SolutionDomain> SolutionDomains { get; set; } = null!;
         public DbSet<Technology> Technologies { get; set; } = null!;
+        public DbSet<ProjectMember> ProjectMembers { get; set; } = null!;
 
         // ── Audit ─────────────────────────────────────────────
         public DbSet<AuditLog> AuditLogs { get; set; } = null!;
@@ -51,16 +57,35 @@ namespace PMHUB.Infrastructure.Persistence
         {
             base.OnModelCreating(builder);
 
-            // ── User ──────────────────────────────────────────
+            // ── TPH Configuration ─────────────────────────────
             builder.Entity<User>()
-                .HasOne(u => u.ApprovedBy)
-                .WithMany()
-                .HasForeignKey(u => u.ApprovedById)
-                .OnDelete(DeleteBehavior.Restrict);
+                .HasDiscriminator<string>("UserType")
+                .HasValue<NormalUser>("NormalUser")
+                .HasValue<Admin>("AdminUser");
 
+            // ── Email unique ──────────────────────────────────
             builder.Entity<User>()
                 .HasIndex(u => u.Email)
                 .IsUnique();
+
+            // ── Role ──────────────────────────────────────────
+            builder.Entity<Role>()
+                .HasIndex(r => r.Name)
+                .IsUnique();
+
+            // ── NormalUser → Role ─────────────────────────────
+            builder.Entity<NormalUser>()
+             .HasOne(u => u.Role)
+                .WithMany(r => r.Users)
+                .HasForeignKey(u => u.RoleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ── NormalUser → ApprovedBy (AdminUser) ───────────
+            builder.Entity<NormalUser>()
+            .HasOne(u => u.ApprovedBy)
+                .WithMany()
+            .HasForeignKey(u => u.ApprovedById)
+                    .OnDelete(DeleteBehavior.Restrict);
 
             // ── Intern ────────────────────────────────────────
             builder.Entity<Intern>()
@@ -90,19 +115,27 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(p => p.DepartmentId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // ── Project self-referencing (sous-projets) ───────
+            // ── Project self-referencing ──────────────────────
             builder.Entity<Project>()
                 .HasOne(p => p.ParentProject)
                 .WithMany(p => p.SubProjects)
                 .HasForeignKey(p => p.ParentProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            //  Project → Sprints
+            // ── Project → ProjectManager (NormalUser) ─────────
+            builder.Entity<Project>()
+                .HasOne(p => p.ProjectManager)
+                .WithMany()
+                .HasForeignKey(p => p.ProjectManagerId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // ── Project → Sprints ─────────────────────────────
             builder.Entity<Sprint>()
-            .HasOne(s => s.Project)
-            .WithMany(p => p.Sprints)
-            .HasForeignKey(s => s.ProjectId)
-            .OnDelete(DeleteBehavior.Restrict);
+                .HasOne(s => s.Project)
+                .WithMany(p => p.Sprints)
+                .HasForeignKey(s => s.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // ── Project → Tasks ───────────────────────────────
             builder.Entity<Project>()
                 .HasMany(p => p.Tasks)
@@ -110,7 +143,7 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(t => t.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            //  Sprint → Tasks (optionnel)
+            // ── Sprint → Tasks ────────────────────────────────
             builder.Entity<ProjectTask>()
                 .HasOne(t => t.Sprint)
                 .WithMany(s => s.Tasks)
@@ -124,7 +157,7 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(t => t.AssignedUserId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            //  Task → HourEntries
+            // ── Task → HourEntries ────────────────────────────
             builder.Entity<HourEntry>()
                 .HasOne(h => h.Task)
                 .WithMany(t => t.HourEntries)
@@ -151,19 +184,19 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(h => h.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            //  Sprint → HourEntries (optionnel)
+            // ── Sprint → HourEntries ──────────────────────────
             builder.Entity<HourEntry>()
                 .HasOne(h => h.Sprint)
                 .WithMany()
                 .HasForeignKey(h => h.SprintId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            // ── HourEntry → User ──────────────────────────────
+            // ── HourEntry → NormalUser ────────────────────────
             builder.Entity<HourEntry>()
-                .HasOne(h => h.User)
-                .WithMany(u => u.HourEntries)
+                 .HasOne(h => h.User)
+                .WithMany(u => u.HourEntries)  
                 .HasForeignKey(h => h.UserId)
-                .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.SetNull);
 
             builder.Entity<HourEntry>()
                 .HasOne(h => h.InternAllocation)
@@ -171,14 +204,14 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(h => h.InternAllocationId)
                 .OnDelete(DeleteBehavior.NoAction);
 
-            // ── ProjectAllocation → User ──────────────────────
+            // ── ProjectAllocation → NormalUser ────────────────
             builder.Entity<ProjectAllocation>()
                 .HasOne(pa => pa.User)
                 .WithMany()
                 .HasForeignKey(pa => pa.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // ── Project → autres collections ──────────────────
+            // ── Project → collections ─────────────────────────
             builder.Entity<Project>()
                 .HasMany(p => p.KPIs)
                 .WithOne(k => k.Project)
@@ -203,14 +236,14 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(sc => sc.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // ── Report → User ─────────────────────────────────
+            // ── Report → NormalUser ───────────────────────────
             builder.Entity<Report>()
-                .HasOne(r => r.CreatedBy)
-                .WithMany(u => u.Reports)
-                .HasForeignKey(r => r.CreatedById)
-                .OnDelete(DeleteBehavior.Cascade);
+             .HasOne(r => r.CreatedBy)
+                 .WithMany(u => u.Reports)       
+                    .HasForeignKey(r => r.CreatedById)
+                    .OnDelete(DeleteBehavior.Cascade);
 
-            // ── Project ↔ User (Members) ──────────────────────
+            // ── ProjectMember ─────────────────────────────────
             builder.Entity<ProjectMember>()
                 .HasOne(pm => pm.Project)
                 .WithMany(p => p.ProjectMembers)
@@ -219,11 +252,17 @@ namespace PMHUB.Infrastructure.Persistence
 
             builder.Entity<ProjectMember>()
                 .HasOne(pm => pm.User)
-                .WithMany(u => u.ProjectMembers)
+                .WithMany(u => u.ProjectMembers)  
                 .HasForeignKey(pm => pm.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+            // ── ProjectMember → Role ──────────────────────────
+            builder.Entity<ProjectMember>()
+                .HasOne(pm => pm.Role)
+                .WithMany()
+                .HasForeignKey(pm => pm.RoleId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Index
             builder.Entity<ProjectMember>()
                 .HasIndex(pm => new { pm.ProjectId, pm.UserId })
                 .IsUnique();
@@ -271,26 +310,16 @@ namespace PMHUB.Infrastructure.Persistence
                 .OnDelete(DeleteBehavior.Restrict);
 
             // ── Index performances ────────────────────────────
-            builder.Entity<Department>()
-                .HasIndex(d => d.BusinessUnitId);
-            builder.Entity<Department>()
-                .HasIndex(d => d.PlantId);
-            builder.Entity<Project>()
-                .HasIndex(p => p.DepartmentId);
-            builder.Entity<Project>()
-                .HasIndex(p => p.Status);
-            builder.Entity<Project>()
-                .HasIndex(p => p.Phase);
-            builder.Entity<Sprint>()
-                .HasIndex(s => s.ProjectId);
-            builder.Entity<ProjectTask>()
-                .HasIndex(t => t.ProjectId);
-            builder.Entity<ProjectTask>()
-                .HasIndex(t => t.SprintId);
-            builder.Entity<HourEntry>()
-                .HasIndex(h => h.ProjectId);
-            builder.Entity<HourEntry>()
-                .HasIndex(h => h.TaskId);
+            builder.Entity<Department>().HasIndex(d => d.BusinessUnitId);
+            builder.Entity<Department>().HasIndex(d => d.PlantId);
+            builder.Entity<Project>().HasIndex(p => p.DepartmentId);
+            builder.Entity<Project>().HasIndex(p => p.Status);
+            builder.Entity<Project>().HasIndex(p => p.Phase);
+            builder.Entity<Sprint>().HasIndex(s => s.ProjectId);
+            builder.Entity<ProjectTask>().HasIndex(t => t.ProjectId);
+            builder.Entity<ProjectTask>().HasIndex(t => t.SprintId);
+            builder.Entity<HourEntry>().HasIndex(h => h.ProjectId);
+            builder.Entity<HourEntry>().HasIndex(h => h.TaskId);
 
             // ── Decimal precision ─────────────────────────────
             builder.Entity<Project>()
@@ -305,6 +334,29 @@ namespace PMHUB.Infrastructure.Persistence
             builder.Entity<ProjectResource>()
                 .Property(r => r.CreatedAt)
                 .HasDefaultValueSql("GETUTCDATE()");
+            builder.Entity<AllocationTemplate>()
+    .Property(a => a.DefaultHours)
+    .HasColumnType("decimal(18,2)");
+
+            builder.Entity<InternAllocation>()
+                .Property(i => i.AllocatedHours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<InternAllocation>()
+                .Property(i => i.HoursWorked)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<Project>()
+                .Property(p => p.EstimatedHours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<Project>()
+                .Property(p => p.StrategicScore)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<ProjectAllocation>()
+                .Property(pa => pa.AllocatedHours)
+                .HasColumnType("decimal(18,2)");
         }
     }
 }

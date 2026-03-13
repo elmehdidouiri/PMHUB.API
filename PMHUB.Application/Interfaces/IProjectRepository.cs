@@ -1,4 +1,5 @@
-﻿ using PMHUB.Domain.Entities;
+﻿using PMHUB.Application.DTOs;
+using PMHUB.Domain.Entities;
 using System.Linq.Expressions;
 
 
@@ -13,6 +14,8 @@ namespace PMHUB.Infrastructure.Repositories
         Task<IEnumerable<Project>> GetAllWithIncludesAsync();
         Task<IEnumerable<Project>> FindWithIncludesAsync(
         Expression<Func<Project, bool>> predicate);
+        Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(
+    PaginationQueryDto query);
     }
 
 }

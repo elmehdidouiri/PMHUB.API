@@ -17,11 +17,12 @@ namespace PMHUB.Domain.Entities
         [Required]
         public Guid UserId { get; set; }
         [ForeignKey("UserId")]
-        public User User { get; set; } = null!;
+        public NormalUser User { get; set; } = null!;
 
          [Required]
-        public RoleType ProjectRole { get; set; }
-
+        public Guid RoleId { get; set; }
+        [ForeignKey("RoleId")]
+        public Role Role { get; set; } = null!;
         public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
     }

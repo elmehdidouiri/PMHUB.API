@@ -15,7 +15,7 @@ namespace PMHUB.Domain.Entities
 
         public Guid CreatedById { get; set; }
         [ForeignKey("CreatedById")]
-        public User CreatedBy { get; set; } = null!;
+        public NormalUser CreatedBy { get; set; } = null!;
 
         [Required]
         public string Data { get; set; } = string.Empty;

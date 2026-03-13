@@ -30,7 +30,7 @@ namespace PMHUB.Domain.Entities
 
          public Guid? AssignedUserId { get; set; }
         [ForeignKey("AssignedUserId")]
-        public User? AssignedUser { get; set; }
+        public NormalUser? AssignedUser { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }

@@ -1,5 +1,7 @@
-﻿using PMHUB.Application.DTOs;
+﻿using Microsoft.Extensions.Logging;
+using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
+using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Repositories;
 using Task = System.Threading.Tasks.Task;
@@ -10,21 +12,28 @@ namespace PMHUB.Application.Services
     {
         private readonly IRepository<Plant> _plantRepository;
         private readonly IRepository<BusinessUnit> _businessUnitRepository;
+        private readonly ILogger<PlantService> _logger;
 
         public PlantService(
             IRepository<Plant> plantRepository,
-            IRepository<BusinessUnit> businessUnitRepository)
+            IRepository<BusinessUnit> businessUnitRepository,
+            ILogger<PlantService> logger)
         {
             _plantRepository = plantRepository;
             _businessUnitRepository = businessUnitRepository;
+            _logger = logger;
         }
 
         public async Task<PlantDto> CreateAsync(CreatePlantDto dto)
         {
-            // Vérifier doublon nom
-            var existing = await _plantRepository.FindAsync(p => p.Name == dto.Name);
+            _logger.LogInformation("Création d'un plant : {Name}", dto.Name);
+
+             var existing = await _plantRepository.FindAsync(p => p.Name == dto.Name);
             if (existing.Any())
+            {
+                _logger.LogWarning("Plant {Name} existe déjà", dto.Name);
                 throw new ConflictException("Plant", dto.Name);
+            }
 
             var plant = new Plant
             {
@@ -36,17 +45,23 @@ namespace PMHUB.Application.Services
             await _plantRepository.AddAsync(plant);
             await _plantRepository.SaveChangesAsync();
 
+            _logger.LogInformation("Plant {PlantId} créé avec succès", plant.Id);
+
             return MapToDto(plant);
         }
 
         public async Task<IEnumerable<PlantDto>> GetAllAsync()
         {
+            _logger.LogInformation("Récupération de tous les plants");
+
             var plants = await _plantRepository.GetAllAsync();
             return plants.Select(MapToDto);
         }
 
         public async Task<PlantDto?> GetByIdAsync(Guid id)
         {
+            _logger.LogInformation("Récupération du plant {PlantId}", id);
+
             var plant = await _plantRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Plant", id);
 
@@ -55,14 +70,18 @@ namespace PMHUB.Application.Services
 
         public async Task<PlantDto> UpdateAsync(Guid id, UpdatePlantDto dto)
         {
+            _logger.LogInformation("Mise à jour du plant {PlantId}", id);
+
             var plant = await _plantRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Plant", id);
 
-            // Vérifier doublon nom (exclure lui-même)
-            var existing = await _plantRepository.FindAsync(
+             var existing = await _plantRepository.FindAsync(
                 p => p.Name == dto.Name && p.Id != id);
             if (existing.Any())
+            {
+                _logger.LogWarning("Plant {Name} existe déjà", dto.Name);
                 throw new ConflictException("Plant", dto.Name);
+            }
 
             plant.Name = dto.Name;
             plant.Description = dto.Description;
@@ -71,31 +90,39 @@ namespace PMHUB.Application.Services
             _plantRepository.Update(plant);
             await _plantRepository.SaveChangesAsync();
 
+            _logger.LogInformation("Plant {PlantId} mis à jour avec succès", id);
+
             return MapToDto(plant);
         }
 
         public async Task DeleteAsync(Guid id)
         {
+            _logger.LogInformation("Suppression du plant {PlantId}", id);
+
             var plant = await _plantRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Plant", id);
 
-            // Vérifier si des départements sont liés
-            if (plant.Departments.Any())
+             if (plant.Departments.Any())
+            {
+                _logger.LogWarning("Impossible de supprimer le plant {PlantId} : départements actifs", id);
                 throw new BadRequestException(
                     "Impossible de supprimer ce plant car il contient des départements actifs.");
+            }
 
             _plantRepository.Remove(plant);
             await _plantRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Plant {PlantId} supprimé avec succès", id);
         }
 
         public async Task<IEnumerable<PlantDto>> GetByBusinessUnitAsync(Guid businessUnitId)
         {
-            // Vérifier que la BU existe
-            await (_businessUnitRepository.GetByIdAsync(businessUnitId)
+            _logger.LogInformation("Récupération des plants pour la BU {BUId}", businessUnitId);
+
+             await (_businessUnitRepository.GetByIdAsync(businessUnitId)
                 ?? throw new NotFoundException("BusinessUnit", businessUnitId));
 
-            // Récupérer les plants via les départements de cette BU
-            var plants = await _plantRepository.FindAsync(
+             var plants = await _plantRepository.FindAsync(
                 p => p.Departments.Any(d => d.BusinessUnitId == businessUnitId));
 
             return plants.Select(MapToDto);

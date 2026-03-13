@@ -38,7 +38,8 @@ namespace PMHUB.Application.DTOs
         public decimal EstimatedHours { get; set; }
          public int ProgressPercentage { get; set; }
 
-        public string? ProjectManager { get; set; }
+        public Guid? ProjectManagerId { get; set; }
+        public string? ProjectManagerName { get; set; }
         public string? Sponsor { get; set; }
         public string? CostCenter { get; set; }
         public string? CodeSourceLink { get; set; }
