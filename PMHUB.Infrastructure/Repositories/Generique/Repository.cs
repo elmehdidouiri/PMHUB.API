@@ -1,9 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using PMHUB.Infrastructure.Persistence;
 using System.Linq.Expressions;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace PMHUB.Infrastructure.Repositories.Generique
 {
@@ -18,20 +15,37 @@ namespace PMHUB.Infrastructure.Repositories.Generique
             _dbSet = context.Set<T>();
         }
 
-        public async Task<T?> GetByIdAsync(Guid id) => await _dbSet.FindAsync(id);
+        public async Task<T?> GetByIdAsync(Guid id) =>
+            await _dbSet.FindAsync(id);
 
         public async Task<IEnumerable<T>> GetAllAsync() =>
-                                                             await _dbSet.AsNoTracking().ToListAsync();
+            await _dbSet.AsNoTracking().ToListAsync();
+
         public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate) =>
-      await _dbSet.AsNoTracking().Where(predicate).ToListAsync();
+            await _dbSet.AsNoTracking().Where(predicate).ToListAsync();
 
-        public async Task AddAsync(T entity) => await _dbSet.AddAsync(entity);
+      
 
-        // Update est **synchrone**
-        public void Update(T entity) => _dbSet.Update(entity);
+        public async Task<decimal> SumAsync(
+            Expression<Func<T, bool>> predicate,
+            Expression<Func<T, decimal>> selector)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Where(predicate)
+                .SumAsync(selector);
+        }
 
-        public void Remove(T entity) => _dbSet.Remove(entity);
+        public async Task AddAsync(T entity) =>
+            await _dbSet.AddAsync(entity);
 
-        public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
+        public void Update(T entity) =>
+            _dbSet.Update(entity);
+
+        public void Remove(T entity) =>
+            _dbSet.Remove(entity);
+
+        public async Task<int> SaveChangesAsync() =>
+            await _context.SaveChangesAsync();
     }
 }

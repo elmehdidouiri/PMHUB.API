@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
@@ -6,7 +7,8 @@ using PMHUB.Application.IServices;
 namespace PMHUB.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/plants")]
+    [Authorize]
     public class PlantsController : ControllerBase
     {
         private readonly IPlantService _service;
@@ -18,6 +20,7 @@ namespace PMHUB.API.Controllers
 
         // POST api/plants
         [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<PlantDto>>> Create(
             [FromBody] CreatePlantDto dto)
         {
@@ -45,6 +48,7 @@ namespace PMHUB.API.Controllers
 
         // PUT api/plants/{id}
         [HttpPut("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<PlantDto>>> Update(
             Guid id, [FromBody] UpdatePlantDto dto)
         {
@@ -54,6 +58,7 @@ namespace PMHUB.API.Controllers
 
         // DELETE api/plants/{id}
         [HttpDelete("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> Delete(Guid id)
         {
             await _service.DeleteAsync(id);

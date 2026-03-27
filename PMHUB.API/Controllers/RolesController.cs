@@ -1,11 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace PMHUB.API.Controllers
 {
@@ -22,114 +19,53 @@ namespace PMHUB.API.Controllers
             _logger = logger;
         }
 
-        // ── GET api/roles
+        // GET api/roles  
         [HttpGet]
+        [AllowAnonymous]
         public async Task<ActionResult<ApiResponse<IEnumerable<RoleDto>>>> GetAll()
         {
-            try
-            {
-                _logger.LogInformation("Récupération de tous les rôles");
-                var roles = await _service.GetAllRolesAsync();
-                _logger.LogInformation("{Count} rôles récupérés", roles?.Count() ?? 0);
-                return Ok(ApiResponse<IEnumerable<RoleDto>>.Ok(roles));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Erreur lors de la récupération de tous les rôles");
-                throw;
-            }
+            var roles = await _service.GetAllRolesAsync();
+            return Ok(ApiResponse<IEnumerable<RoleDto>>.Ok(roles));
         }
 
-        // ── GET api/roles/{id}
+        // GET api/roles/{id} ← Public pour dropdown inscription
         [HttpGet("{id:guid}")]
+        [AllowAnonymous]
         public async Task<ActionResult<ApiResponse<RoleDto>>> GetById(Guid id)
         {
-            try
-            {
-                _logger.LogInformation("Récupération du rôle Id {RoleId}", id);
-                var role = await _service.GetRoleByIdAsync(id);
-                if (role == null)
-                {
-                    _logger.LogWarning("Rôle Id {RoleId} non trouvé", id);
-                    throw new NotFoundException("Role not found");
-                }
-
-                return Ok(ApiResponse<RoleDto>.Ok(role));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Erreur lors de la récupération du rôle Id {RoleId}", id);
-                throw;
-            }
+            var role = await _service.GetRoleByIdAsync(id);
+            return Ok(ApiResponse<RoleDto>.Ok(role));
         }
 
-        // ── POST api/roles
+        // POST api/roles 
         [HttpPost]
-        public async Task<ActionResult<ApiResponse<RoleDto>>> Create([FromBody] CreateRoleDto dto)
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<RoleDto>>> Create(
+            [FromBody] CreateRoleDto dto)
         {
-            try
-            {
-                _logger.LogInformation("Création d'un rôle : {@Dto}", dto);
-                var role = await _service.CreateRoleAsync(dto);
-                _logger.LogInformation("Rôle créé avec succès Id {RoleId}", role.Id);
-                return CreatedAtAction(
-                    nameof(GetById),
-                    new { id = role.Id },
-                    ApiResponse<RoleDto>.Ok(role, "Role créé avec succès."));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Erreur lors de la création d'un rôle : {@Dto}", dto);
-                throw;
-            }
+            var role = await _service.CreateRoleAsync(dto);
+            return CreatedAtAction(nameof(GetById),
+                new { id = role.Id },
+                ApiResponse<RoleDto>.Ok(role, "Role créé avec succès."));
         }
 
-        // ── PUT api/roles/{id}
+        // PUT api/roles/{id} 
         [HttpPut("{id:guid}")]
-        public async Task<ActionResult<ApiResponse<RoleDto>>> Update(Guid id, [FromBody] UpdateRoleDto dto)
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<RoleDto>>> Update(
+            Guid id, [FromBody] UpdateRoleDto dto)
         {
-            try
-            {
-                _logger.LogInformation("Mise à jour du rôle Id {RoleId} : {@Dto}", id, dto);
-                var role = await _service.UpdateRoleAsync(id, dto);
-                if (role == null)
-                {
-                    _logger.LogWarning("Rôle Id {RoleId} non trouvé pour mise à jour", id);
-                    throw new NotFoundException("Role not found");
-                }
-
-                _logger.LogInformation("Rôle Id {RoleId} mis à jour avec succès", id);
-                return Ok(ApiResponse<RoleDto>.Ok(role, "Role mis à jour avec succès."));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Erreur lors de la mise à jour du rôle Id {RoleId} : {@Dto}", id, dto);
-                throw;
-            }
+            var role = await _service.UpdateRoleAsync(id, dto);
+            return Ok(ApiResponse<RoleDto>.Ok(role, "Role mis à jour avec succès."));
         }
 
-        // ── DELETE api/roles/{id}
+        // DELETE api/roles/{id}  
         [HttpDelete("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> Delete(Guid id)
         {
-            try
-            {
-                _logger.LogInformation("Suppression du rôle Id {RoleId}", id);
-                var deleted = await _service.DeleteRoleAsync(id);
-                if (!deleted)
-                {
-                    _logger.LogWarning("Rôle Id {RoleId} non trouvé pour suppression", id);
-                    throw new NotFoundException("Role not found");
-                }
-
-                _logger.LogInformation("Rôle Id {RoleId} supprimé avec succès", id);
-                return Ok(ApiResponse.Ok("Role supprimé avec succès."));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Erreur lors de la suppression du rôle Id {RoleId}", id);
-                throw;
-            }
+            await _service.DeleteRoleAsync(id);
+            return Ok(ApiResponse.Ok("Role supprimé avec succès."));
         }
     }
 }

@@ -48,6 +48,7 @@ namespace PMHUB.Application.Services
         public async Task<ProjectDto> CreateAsync(CreateFullProjectDto dto)
         {
             _logger.LogInformation("Création du projet {ProjectName}", dto.Name);
+
             var department = await _departmentRepository.GetByIdAsync(dto.DepartmentId)
                 ?? throw new NotFoundException("Department", dto.DepartmentId);
 
@@ -57,18 +58,13 @@ namespace PMHUB.Application.Services
 
             ProjectValidator.ValidateDates(dto);
 
-            var project = new Project
-            {
-                Name = dto.Name,
-                Description = dto.Description,
-                DepartmentId = dto.DepartmentId,
-                StartDate = dto.StartDate,
-                EndDate = dto.EndDate,
-                CreatedAt = DateTime.UtcNow
-            };
+            var project = BuildProject(dto);
+
+             await AttachRelationsAsync(project, dto);
 
             await _projectRepository.AddAsync(project);
             await _projectRepository.SaveChangesAsync();
+
             _logger.LogInformation("Projet {ProjectId} créé avec succès", project.Id);
 
             return ProjectMapper.ToDto(project, department);
@@ -428,7 +424,30 @@ namespace PMHUB.Application.Services
             _projectRepository.Update(project);
             await _projectRepository.SaveChangesAsync();
         }
+        public async Task<IEnumerable<ProjectExportDto>> GetForExportAsync(DateTime startDate, DateTime endDate)
+        {
+            var projects = await _projectRepository.FindWithIncludesAsync(
+                                p => p.HourEntries.Any(h => h.Date >= startDate && h.Date <= endDate));
 
+            return projects.Select(p => new ProjectExportDto
+            {
+                Project = p.Name,
+                Phase = p.Phase.ToString(),
+                EstimatedHours = p.EstimatedHours,
+ 
+                TotalBookingHoursJanuary = p.HourEntries
+                    .Where(h => h.Date.Month == 1 && h.Date.Year == startDate.Year)
+                    .Sum(h => h.TotalHours),
+         
+                TotalBookingHoursFebruary = p.HourEntries
+                    .Where(h => h.Date.Month == 2 && h.Date.Year == startDate.Year)
+                    .Sum(h => h.TotalHours),
+
+                Department = p.Department?.Name ?? "N/A",
+                Sponsor = p.Sponsor ?? "N/A",
+                CostCenter = p.CostCenter ?? "N/A"
+            }).ToList();
+        }
         // ── HELPERS PRIVÉS ────────────────────────────────────
         private static Project BuildProject(CreateFullProjectDto dto) => new()
         {

@@ -78,8 +78,6 @@ public class CreateFullProjectDto
         = new List<CreateProjectMemberDto>();
     public ICollection<CreateProjectResourceDto> ProjectResources { get; set; } = new List<CreateProjectResourceDto>();
     public ICollection<CreateStrategicCriterionDto> StrategicCriteria { get; set; } = new List<CreateStrategicCriterionDto>();
-    public ICollection<CreateProjectAllocationDto> Allocations { get; set; } = new List<CreateProjectAllocationDto>();
-    public ICollection<CreateInternAllocationDto> InternAllocations { get; set; } = new List<CreateInternAllocationDto>();
-    public ICollection<CreateKpiDto> KPIs { get; set; } = new List<CreateKpiDto>();
+     public ICollection<CreateKpiDto> KPIs { get; set; } = new List<CreateKpiDto>();
 
 }

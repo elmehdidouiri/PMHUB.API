@@ -18,8 +18,7 @@ namespace PMHUB.Application.Services.Implementation
             _logger = logger;
         }
 
-        // ── GET ALL ───────────────────────────────────
-        public async Task<IEnumerable<AdminDto>> GetAllAdminsAsync()
+         public async Task<IEnumerable<AdminDto>> GetAllAdminsAsync()
         {
             _logger.LogInformation("Récupération de tous les admins.");
 
@@ -35,8 +34,7 @@ namespace PMHUB.Application.Services.Implementation
             }
         }
 
-        // ── GET BY ID ─────────────────────────────────
-        public async Task<AdminDto?> GetAdminByIdAsync(Guid id)
+         public async Task<AdminDto?> GetAdminByIdAsync(Guid id)
         {
             _logger.LogInformation("Récupération de l'admin {AdminId}.", id);
 
@@ -54,8 +52,7 @@ namespace PMHUB.Application.Services.Implementation
             }
         }
 
-        // ── CREATE ────────────────────────────────────
-        public async Task<AdminDto> CreateAdminAsync(CreateAdminDto dto)
+         public async Task<AdminDto> CreateAdminAsync(CreateAdminDto dto)
         {
             _logger.LogInformation("Création d'un nouvel admin {Email}.", dto.Email);
 
@@ -87,8 +84,7 @@ namespace PMHUB.Application.Services.Implementation
             }
         }
 
-        // ── UPDATE ────────────────────────────────────
-        public async Task<AdminDto> UpdateAdminAsync(Guid id, UpdateAdminDto dto)
+         public async Task<AdminDto> UpdateAdminAsync(Guid id, UpdateAdminDto dto)
         {
             _logger.LogInformation("Mise à jour de l'admin {AdminId}.", id);
 
@@ -121,8 +117,7 @@ namespace PMHUB.Application.Services.Implementation
             }
         }
 
-        // ── DELETE ────────────────────────────────────
-        public async Task<bool> DeleteAdminAsync(Guid id)
+         public async Task<bool> DeleteAdminAsync(Guid id)
         {
             _logger.LogInformation("Suppression de l'admin {AdminId}.", id);
 
@@ -144,8 +139,7 @@ namespace PMHUB.Application.Services.Implementation
             }
         }
 
-        // ── MAPPER ────────────────────────────────────
-        private static AdminDto MapToDto(Admin admin) => new()
+         private static AdminDto MapToDto(Admin admin) => new()
         {
             Id = admin.Id,
             FirstName = admin.FirstName,

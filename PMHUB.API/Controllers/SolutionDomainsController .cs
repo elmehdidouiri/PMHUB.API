@@ -1,5 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
-
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
@@ -7,7 +7,8 @@ using PMHUB.Application.IServices;
 namespace PMHUB.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/solutiondomains")]
+    [Authorize]
     public class SolutionDomainsController : ControllerBase
     {
         private readonly ISolutionDomainService _service;
@@ -19,6 +20,7 @@ namespace PMHUB.API.Controllers
 
         // POST api/solutiondomains
         [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<SolutionDomainDto>>> Create(
             [FromBody] CreateSolutionDomainDto dto)
         {
@@ -46,15 +48,18 @@ namespace PMHUB.API.Controllers
 
         // PUT api/solutiondomains/{id}
         [HttpPut("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<SolutionDomainDto>>> Update(
             Guid id, [FromBody] UpdateSolutionDomainDto dto)
         {
             var result = await _service.UpdateAsync(id, dto);
-            return Ok(ApiResponse<SolutionDomainDto>.Ok(result, "Domaine de solution mis à jour avec succès."));
+            return Ok(ApiResponse<SolutionDomainDto>.Ok(
+                result, "Domaine de solution mis à jour avec succès."));
         }
 
         // DELETE api/solutiondomains/{id}
         [HttpDelete("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> Delete(Guid id)
         {
             await _service.DeleteAsync(id);

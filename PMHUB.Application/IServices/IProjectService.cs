@@ -22,5 +22,6 @@ namespace PMHUB.Application.IServices
         Task RemoveMemberAsync(Guid projectId, Guid userId);
         Task<ProjectDto> PatchAsync(Guid id, PatchProjectDto dto);
         Task<PaginatedResultDto<ProjectSummaryDto>> GetPagedAsync(PaginationQueryDto query);
+        Task<IEnumerable<ProjectExportDto>> GetForExportAsync(DateTime startDate, DateTime endDate);
     }
 }

@@ -37,7 +37,7 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(p => p.SubProjects)
                     .ThenInclude(sp => sp.Department)
                 .Include(p => p.ParentProject)
-                .Include(p => p.ProjectAllocations);
+                 ;
 
         public async Task<Project?> GetByNameAsync(string name) =>
             await _context.Projects
@@ -48,9 +48,9 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Projects
                 .Include(p => p.SubProjects)
                 .Include(p => p.Tasks)
-                    .ThenInclude(t => t.AssignedUser)
-                .Include(p => p.ProjectAllocations)
-                    .ThenInclude(a => a.User)
+                    .ThenInclude(t => t.AssignedUser)    
+        .Include(p => p.ProjectMembers)           
+            .ThenInclude(pm => pm.User)
                 .Include(p => p.InternAllocations)
                     .ThenInclude(ia => ia.Intern)
                 .Include(p => p.KPIs)

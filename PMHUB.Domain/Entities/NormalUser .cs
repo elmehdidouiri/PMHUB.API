@@ -17,7 +17,7 @@ namespace PMHUB.Domain.Entities
         [ForeignKey("ApprovedById")]
         public Admin? ApprovedBy { get; set; }
         public DateTime? ApprovedAt { get; set; }
-         
+
         public ICollection<HourEntry> HourEntries { get; set; } = new List<HourEntry>();
         public ICollection<Report> Reports { get; set; } = new List<Report>();
         public ICollection<ProjectMember> ProjectMembers { get; set; } = new List<ProjectMember>();

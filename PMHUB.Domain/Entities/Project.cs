@@ -96,8 +96,7 @@ namespace PMHUB.Domain.Entities
 
 
         public ICollection<ProjectTask> Tasks { get; set; } = new List<ProjectTask>();
-        public ICollection<ProjectAllocation> ProjectAllocations { get; set; } = new List<ProjectAllocation>();
-        public ICollection<InternAllocation> InternAllocations { get; set; } = new List<InternAllocation>();
+         public ICollection<InternAllocation> InternAllocations { get; set; } = new List<InternAllocation>();
         public ICollection<HourEntry> HourEntries { get; set; } = new List<HourEntry>();
         public ICollection<KPI> KPIs { get; set; } = new List<KPI>();
         public ICollection<ProjectFile> ProjectFiles { get; set; } = new List<ProjectFile>();

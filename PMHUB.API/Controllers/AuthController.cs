@@ -47,7 +47,7 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<AuthSuccessDto>.Ok(result));
         }
 
-        // GET api/auth/pending ← Admin uniquement
+        // GET api/auth/pending 
         [HttpGet("pending")]
         [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<IEnumerable<UserDto>>>> GetPendingUsers()
@@ -56,7 +56,7 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<IEnumerable<UserDto>>.Ok(pendingUsers));
         }
 
-        // PUT api/auth/approve ← Admin uniquement
+        // PUT api/auth/approve  t
         [HttpPut("approve")]
         [Authorize(Policy = "AdminOnly")]
         public async Task<IActionResult> ApproveUser([FromBody] ApproveUserDto dto)

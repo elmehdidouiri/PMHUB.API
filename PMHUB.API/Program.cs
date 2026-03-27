@@ -1,17 +1,20 @@
+using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using PMHUB.API.Middleware;
+ using PMHUB.API.Middleware;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Interfaces;
 using PMHUB.Application.IServices;
 using PMHUB.Application.Services;
 using PMHUB.Application.Services.Implementation;
+using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Persistence;
 using PMHUB.Infrastructure.Repositories;
 using PMHUB.Infrastructure.Repositories.Generique;
+using PMHUB.Infrastructure.Repositories.Implementation;
 using PMHUB.Infrastructure.Services;
 using PMHUB.Infrastructure.Storage;
 using Serilog;
@@ -30,8 +33,18 @@ builder.Host.UseSerilog();
 
  builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", builder =>
+    {
+        builder.WithOrigins("http://localhost:4200")
+               .AllowAnyMethod()
+               .AllowAnyHeader();
+    });
+});
 
- builder.Services.AddSwaggerGen(c =>
+
+builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "PMHub API", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -100,13 +113,19 @@ builder.Services.AddAuthentication(options =>
 });
  
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
-builder.Services.AddScoped<IProjectFileRepository, ProjectFileRepository>();
-builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+ builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
- builder.Services.AddScoped<IUserService, UserService>();
+ builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
+builder.Services.AddScoped<IHourEntryRepository, HourEntryRepository>();
+builder.Services.AddScoped<IProjectFileRepository, ProjectFileRepository>();
+
+ builder.Services.AddScoped<IRepository<UserHourlyRate>, Repository<UserHourlyRate>>();
+builder.Services.AddScoped<IRepository<Holiday>, Repository<Holiday>>();
+
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IProjectFileService, ProjectFileService>();
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
@@ -117,8 +136,14 @@ builder.Services.AddScoped<ISolutionDomainService, SolutionDomainService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IHourEntryService, HourEntryService>();
+builder.Services.AddScoped<IHourSummaryService, HourSummaryService>();
+builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 
- builder.Services.Configure<FormOptions>(options =>
+
+
+
+builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = 52428800;
 });
@@ -145,6 +170,8 @@ app.UseStaticFiles();
 
  app.UseAuthentication();
 app.UseAuthorization();
+app.UseCors("AllowFrontend");
+
 
 app.MapControllers();
 

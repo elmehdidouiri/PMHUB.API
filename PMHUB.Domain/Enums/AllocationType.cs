@@ -8,8 +8,7 @@ namespace PMHUB.Domain.Enums
 {
     public enum AllocationType
     {
-        Resource,
-        Consultant,
-        Intern
+        Daily,
+        Weekly
     }
 }

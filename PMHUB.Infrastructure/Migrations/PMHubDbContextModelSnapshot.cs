@@ -22,31 +22,6 @@ namespace PMHUB.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("PMHUB.Domain.Entities.AllocationTemplate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("DefaultHours")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("AllocationTemplates");
-                });
-
             modelBuilder.Entity("PMHUB.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -134,6 +109,47 @@ namespace PMHUB.Infrastructure.Migrations
                     b.ToTable("Departments");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.Holiday", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Country")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date");
+
+                    b.HasIndex("Date", "Country");
+
+                    b.ToTable("Holidays");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.HourEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -146,11 +162,19 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
                     b.Property<DateTime>("Date")
                         .HasColumnType("datetime2");
 
-                    b.Property<decimal>("Hours")
+                    b.Property<decimal>("ExecutionHours")
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("HourlyRateAmount")
+                        .HasColumnType("decimal(10,2)");
 
                     b.Property<Guid?>("InternAllocationId")
                         .HasColumnType("uniqueidentifier");
@@ -158,23 +182,57 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<Guid?>("InternId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("IsPremium")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("ManagementHours")
+                        .HasColumnType("decimal(5,2)");
+
                     b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("OtherHours")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int?>("PremiumApprovalStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PremiumReason")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ProcessHours")
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("SprintId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int>("ProjectType")
+                        .HasColumnType("int");
 
-                    b.Property<Guid?>("TaskId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<decimal>("RAndDHours")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("SupervisionHours")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("TotalCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("TotalHours")
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("UserId")
+                    b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("WeekBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("WorkshopHours")
+                        .HasColumnType("decimal(5,2)");
 
                     b.HasKey("Id");
 
@@ -184,11 +242,13 @@ namespace PMHUB.Infrastructure.Migrations
 
                     b.HasIndex("ProjectId");
 
-                    b.HasIndex("SprintId");
-
-                    b.HasIndex("TaskId");
-
                     b.HasIndex("UserId");
+
+                    b.HasIndex("WeekBatchId");
+
+                    b.HasIndex("IsPremium", "PremiumApprovalStatus");
+
+                    b.HasIndex("UserId", "Date");
 
                     b.ToTable("HourEntries");
                 });
@@ -455,42 +515,6 @@ namespace PMHUB.Infrastructure.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("Projects");
-                });
-
-            modelBuilder.Entity("PMHUB.Domain.Entities.ProjectAllocation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("AllocatedHours")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("AllocationDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("AllocationType")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ProjectAllocations");
                 });
 
             modelBuilder.Entity("PMHUB.Domain.Entities.ProjectBusinessUnit", b =>
@@ -933,6 +957,48 @@ namespace PMHUB.Infrastructure.Migrations
                     b.UseTphMappingStrategy();
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.UserHourlyRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("NormalRateAmount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("PremiumRateAmount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "EffectiveFrom");
+
+                    b.ToTable("UserHourlyRates");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.Admin", b =>
                 {
                     b.HasBaseType("PMHUB.Domain.Entities.User");
@@ -1001,10 +1067,9 @@ namespace PMHUB.Infrastructure.Migrations
 
             modelBuilder.Entity("PMHUB.Domain.Entities.HourEntry", b =>
                 {
-                    b.HasOne("PMHUB.Domain.Entities.InternAllocation", "InternAllocation")
+                    b.HasOne("PMHUB.Domain.Entities.InternAllocation", null)
                         .WithMany("HourEntries")
-                        .HasForeignKey("InternAllocationId")
-                        .OnDelete(DeleteBehavior.NoAction);
+                        .HasForeignKey("InternAllocationId");
 
                     b.HasOne("PMHUB.Domain.Entities.Intern", null)
                         .WithMany("HourEntries")
@@ -1013,31 +1078,16 @@ namespace PMHUB.Infrastructure.Migrations
                     b.HasOne("PMHUB.Domain.Entities.Project", "Project")
                         .WithMany("HourEntries")
                         .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.HasOne("PMHUB.Domain.Entities.Sprint", "Sprint")
-                        .WithMany()
-                        .HasForeignKey("SprintId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("PMHUB.Domain.Entities.ProjectTask", "Task")
-                        .WithMany("HourEntries")
-                        .HasForeignKey("TaskId")
-                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("PMHUB.Domain.Entities.NormalUser", "User")
                         .WithMany("HourEntries")
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("InternAllocation");
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Project");
-
-                    b.Navigation("Sprint");
-
-                    b.Navigation("Task");
 
                     b.Navigation("User");
                 });
@@ -1110,25 +1160,6 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("ParentProject");
 
                     b.Navigation("ProjectManager");
-                });
-
-            modelBuilder.Entity("PMHUB.Domain.Entities.ProjectAllocation", b =>
-                {
-                    b.HasOne("PMHUB.Domain.Entities.Project", "Project")
-                        .WithMany("ProjectAllocations")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("PMHUB.Domain.Entities.NormalUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("PMHUB.Domain.Entities.ProjectBusinessUnit", b =>
@@ -1295,6 +1326,17 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.UserHourlyRate", b =>
+                {
+                    b.HasOne("PMHUB.Domain.Entities.NormalUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.NormalUser", b =>
                 {
                     b.HasOne("PMHUB.Domain.Entities.Admin", "ApprovedBy")
@@ -1350,8 +1392,6 @@ namespace PMHUB.Infrastructure.Migrations
 
                     b.Navigation("KPIs");
 
-                    b.Navigation("ProjectAllocations");
-
                     b.Navigation("ProjectBusinessUnits");
 
                     b.Navigation("ProjectFiles");
@@ -1371,11 +1411,6 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("SubProjects");
 
                     b.Navigation("Tasks");
-                });
-
-            modelBuilder.Entity("PMHUB.Domain.Entities.ProjectTask", b =>
-                {
-                    b.Navigation("HourEntries");
                 });
 
             modelBuilder.Entity("PMHUB.Domain.Entities.Role", b =>

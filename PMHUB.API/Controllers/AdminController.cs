@@ -1,11 +1,14 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
+using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
 
 namespace PMHUB.API.Controllers
 {
     [ApiController]
     [Route("api/admins")]
+    [Authorize(Policy = "AdminOnly")]   
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _service;
@@ -19,40 +22,41 @@ namespace PMHUB.API.Controllers
 
         // GET api/admins
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AdminDto>>> GetAll()
+        public async Task<ActionResult<ApiResponse<IEnumerable<AdminDto>>>> GetAll()
         {
             var admins = await _service.GetAllAdminsAsync();
-            return Ok(admins);
+            return Ok(ApiResponse<IEnumerable<AdminDto>>.Ok(admins));
         }
 
         // GET api/admins/{id}
         [HttpGet("{id:guid}")]
-        public async Task<ActionResult<AdminDto>> GetById(Guid id)
+        public async Task<ActionResult<ApiResponse<AdminDto>>> GetById(Guid id)
         {
             var admin = await _service.GetAdminByIdAsync(id);
             if (admin == null) return NotFound($"Admin {id} introuvable.");
-            return Ok(admin);
+            return Ok(ApiResponse<AdminDto>.Ok(admin));
         }
 
         // POST api/admins
         [HttpPost]
-        public async Task<ActionResult<AdminDto>> Create([FromBody] CreateAdminDto dto)
+        public async Task<ActionResult<ApiResponse<AdminDto>>> Create(
+            [FromBody] CreateAdminDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-
             var admin = await _service.CreateAdminAsync(dto);
-            return CreatedAtAction(nameof(GetById), new { id = admin.Id }, admin);
+            return CreatedAtAction(nameof(GetById), new { id = admin.Id },
+                ApiResponse<AdminDto>.Ok(admin));
         }
 
         // PUT api/admins/{id}
         [HttpPut("{id:guid}")]
-        public async Task<ActionResult<AdminDto>> Update(Guid id, [FromBody] UpdateAdminDto dto)
+        public async Task<ActionResult<ApiResponse<AdminDto>>> Update(
+            Guid id, [FromBody] UpdateAdminDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-
             var admin = await _service.UpdateAdminAsync(id, dto);
             if (admin == null) return NotFound($"Admin {id} introuvable.");
-            return Ok(admin);
+            return Ok(ApiResponse<AdminDto>.Ok(admin));
         }
 
         // DELETE api/admins/{id}
