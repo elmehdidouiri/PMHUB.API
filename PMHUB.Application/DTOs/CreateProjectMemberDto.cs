@@ -1,14 +1,14 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
  
 
 namespace PMHUB.Application.DTOs
 {
     public class CreateProjectMemberDto
     {
-        [Required]
+        [Required(ErrorMessage = "User ID is required.")]
         public Guid UserId { get; set; }
 
-        [Required]
+        [Required(ErrorMessage = "Role ID is required.")]
         public Guid RoleId { get; set; }
      }
 }

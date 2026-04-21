@@ -1,4 +1,4 @@
-﻿ using System;
+ using System;
 
 namespace PMHUB.Domain.ValueObjects
 {
@@ -11,9 +11,10 @@ namespace PMHUB.Domain.ValueObjects
         public decimal RAndDHours { get; }
         public decimal WorkshopHours { get; }
         public decimal OtherHours { get; }
+        public decimal InternManagementHours { get; }
 
         public decimal Total => ExecutionHours + SupervisionHours + ProcessHours +
-                               ManagementHours + RAndDHours + WorkshopHours + OtherHours;
+                               ManagementHours + RAndDHours + WorkshopHours + OtherHours + InternManagementHours;
 
         private HourBreakdown(
             decimal executionHours,
@@ -22,7 +23,8 @@ namespace PMHUB.Domain.ValueObjects
             decimal managementHours,
             decimal rAndDHours,
             decimal workshopHours,
-            decimal otherHours)
+            decimal otherHours,
+            decimal internManagementHours)
         {
             ValidateHours(executionHours, nameof(executionHours));
             ValidateHours(supervisionHours, nameof(supervisionHours));
@@ -31,6 +33,7 @@ namespace PMHUB.Domain.ValueObjects
             ValidateHours(rAndDHours, nameof(rAndDHours));
             ValidateHours(workshopHours, nameof(workshopHours));
             ValidateHours(otherHours, nameof(otherHours));
+            ValidateHours(internManagementHours, nameof(internManagementHours));
 
             ExecutionHours = executionHours;
             SupervisionHours = supervisionHours;
@@ -39,6 +42,7 @@ namespace PMHUB.Domain.ValueObjects
             RAndDHours = rAndDHours;
             WorkshopHours = workshopHours;
             OtherHours = otherHours;
+            InternManagementHours = internManagementHours;
 
             if (Total > 24)
                 throw new ArgumentException(
@@ -52,7 +56,8 @@ namespace PMHUB.Domain.ValueObjects
             decimal managementHours = 0,
             decimal rAndDHours = 0,
             decimal workshopHours = 0,
-            decimal otherHours = 0)
+            decimal otherHours = 0,
+            decimal internManagementHours = 0)
         {
             return new HourBreakdown(
                 executionHours,
@@ -61,12 +66,13 @@ namespace PMHUB.Domain.ValueObjects
                 managementHours,
                 rAndDHours,
                 workshopHours,
-                otherHours);
+                otherHours,
+                internManagementHours);
         }
 
         public static HourBreakdown Zero()
         {
-            return new HourBreakdown(0, 0, 0, 0, 0, 0, 0);
+            return new HourBreakdown(0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         private static void ValidateHours(decimal hours, string paramName)
@@ -94,7 +100,8 @@ namespace PMHUB.Domain.ValueObjects
                    ManagementHours == other.ManagementHours &&
                    RAndDHours == other.RAndDHours &&
                    WorkshopHours == other.WorkshopHours &&
-                   OtherHours == other.OtherHours;
+                   OtherHours == other.OtherHours &&
+                   InternManagementHours == other.InternManagementHours;
         }
 
         public override int GetHashCode()
@@ -106,14 +113,15 @@ namespace PMHUB.Domain.ValueObjects
                 ManagementHours,
                 RAndDHours,
                 WorkshopHours,
-                OtherHours);
+                OtherHours,
+                InternManagementHours);
         }
 
         public override string ToString()
         {
             return $"Total: {Total}h (Exec: {ExecutionHours}h, Sup: {SupervisionHours}h, " +
                    $"Proc: {ProcessHours}h, Mgmt: {ManagementHours}h, " +
-                   $"R&D: {RAndDHours}h, Workshop: {WorkshopHours}h, Other: {OtherHours}h)";
+                   $"R&D: {RAndDHours}h, Workshop: {WorkshopHours}h, Other: {OtherHours}h, Intern: {InternManagementHours}h)";
         }
     }
 }

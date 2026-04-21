@@ -1,4 +1,4 @@
-﻿using PMHUB.Domain.Enums;
+using PMHUB.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,14 +11,15 @@ namespace PMHUB.Application.DTOs
     {
         public ProjectStatus? Status { get; set; }
         public ProcessStatus? ProcessStatus { get; set; }
+        public ProjectType? ProjectType { get; set; }
         public int? ProgressPercentage { get; set; }
         public string? CurrentState { get; set; }
-        public string? Roadblocks { get; set; }
         public string? NextSteps { get; set; }
         public string? Enhancements { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
         public decimal? Budget { get; set; }
         public decimal? CostSaving { get; set; }
+        public decimal? ActualHours { get; set; }
         public string? Sponsor { get; set; }
         public Guid? ProjectManagerId { get; set; }
         public string? CodeSourceLink { get; set; }

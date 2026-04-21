@@ -9,9 +9,20 @@ namespace PMHUB.Infrastructure.Repositories
     {
         public UserRepository(PMHubDbContext context) : base(context) { }
 
-         public async Task<User?> GetByEmailAsync(string email) =>
-            await _context.Users
+         public async Task<User?> GetByEmailAsync(string email)
+        {
+            var user = await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == email);
+
+            if (user is NormalUser normalUser)
+            {
+                await _context.Entry(normalUser)
+                    .Reference(u => u.Role)
+                    .LoadAsync();
+            }
+
+            return user;
+        }
 
          public async Task<User?> GetByIdWithRoleAsync(Guid id) =>
             await _context.Users
@@ -24,6 +35,14 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Users
                 .OfType<NormalUser>()
                 .Include(u => u.Role)
+                .AsNoTracking()
+                .ToListAsync();
+
+         public async Task<IEnumerable<NormalUser>> GetByRoleIdAsync(Guid roleId) =>
+            await _context.Users
+                .OfType<NormalUser>()
+                .Include(u => u.Role)
+                .Where(u => u.RoleId == roleId)
                 .AsNoTracking()
                 .ToListAsync();
 

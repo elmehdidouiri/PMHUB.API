@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PMHUB.Application.Interfaces;
 using PMHUB.Domain.Entities;
 using PMHUB.Domain.Enums;
@@ -14,15 +14,13 @@ namespace PMHUB.Infrastructure.Repositories
 {
     public class ProjectFileRepository : Repository<ProjectFile>, IProjectFileRepository
     {
-        private readonly PMHubDbContext _context;
-
         public ProjectFileRepository(PMHubDbContext context) : base(context)
         {
-            _context = context;
         }
 
         public async Task<IEnumerable<ProjectFile>> GetByProjectIdAsync(Guid projectId) =>
             await _context.ProjectFiles
+                .Include(f => f.Versions)
                 .Where(f => f.ProjectId == projectId)
                 .OrderBy(f => f.FileType)
                 .AsNoTracking()
@@ -31,6 +29,7 @@ namespace PMHUB.Infrastructure.Repositories
         public async Task<ProjectFile?> GetByIdWithIncludesAsync(Guid id) =>
             await _context.ProjectFiles
                 .Include(f => f.Project)
+                .Include(f => f.Versions)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(f => f.Id == id);
 

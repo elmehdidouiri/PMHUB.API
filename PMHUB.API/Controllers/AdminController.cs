@@ -33,7 +33,7 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<AdminDto>>> GetById(Guid id)
         {
             var admin = await _service.GetAdminByIdAsync(id);
-            if (admin == null) return NotFound($"Admin {id} introuvable.");
+            if (admin == null) return NotFound($"Admin {id} was not found.");
             return Ok(ApiResponse<AdminDto>.Ok(admin));
         }
 
@@ -55,7 +55,7 @@ namespace PMHUB.API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             var admin = await _service.UpdateAdminAsync(id, dto);
-            if (admin == null) return NotFound($"Admin {id} introuvable.");
+            if (admin == null) return NotFound($"Admin {id} was not found.");
             return Ok(ApiResponse<AdminDto>.Ok(admin));
         }
 
@@ -64,7 +64,7 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult> Delete(Guid id)
         {
             var deleted = await _service.DeleteAdminAsync(id);
-            if (!deleted) return NotFound($"Admin {id} introuvable.");
+            if (!deleted) return NotFound($"Admin {id} was not found.");
             return NoContent();
         }
     }

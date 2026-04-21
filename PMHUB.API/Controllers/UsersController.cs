@@ -27,6 +27,14 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<IEnumerable<UserDto>>.Ok(users));
         }
 
+        // GET api/users/role/{roleId}
+        [HttpGet("role/{roleId:guid}")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<UserDto>>>> GetByRole(Guid roleId)
+        {
+            var users = await _userService.GetByRoleIdAsync(roleId);
+            return Ok(ApiResponse<IEnumerable<UserDto>>.Ok(users));
+        }
+
         // GET api/users/{id}
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<ApiResponse<UserDto>>> GetById(Guid id)

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
@@ -43,6 +43,8 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<PlantDto>>> GetById(Guid id)
         {
             var result = await _service.GetByIdAsync(id);
+            if (result is null)
+                return NotFound(ApiResponse<PlantDto>.Fail("Plant was not found."));
             return Ok(ApiResponse<PlantDto>.Ok(result));
         }
 

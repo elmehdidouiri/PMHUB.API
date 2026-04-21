@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -9,7 +9,7 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateKpiDto
     {
-        [Required]
+        [Required(ErrorMessage = "KPI name is required.")]
         public string Name { get; set; } = string.Empty;
 
         public decimal TargetValue { get; set; } = 0;

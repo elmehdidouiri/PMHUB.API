@@ -1,4 +1,4 @@
-﻿using PMHUB.Application.DTOs;
+using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
 
 namespace PMHUB.Application.Mappings
@@ -15,6 +15,7 @@ namespace PMHUB.Application.Mappings
             Phase = p.Phase,
             ProcessStatus = p.ProcessStatus,
             ProjectManagementType = p.ProjectManagementType,
+            ProjectType = p.ProjectType,
             StartDate = p.StartDate,
             EndDate = p.EndDate,
             EstimatedDueDate = p.EstimatedDueDate,
@@ -28,21 +29,22 @@ namespace PMHUB.Application.Mappings
             CostCenter = p.CostCenter,
             CostSaving = p.CostSaving,
             ProgressPercentage = p.ProgressPercentage,
+            ActualHours = p.ActualHours,
             CodeSourceLink = p.CodeSourceLink,
             SolutionLink = p.SolutionLink,
             ServerHostName = p.ServerHostName,
             CurrentState = p.CurrentState,
-            Roadblocks = p.Roadblocks,
             NextSteps = p.NextSteps,
             Enhancements = p.Enhancements,
             EstimatedHours = p.EstimatedHours,
-            StrategicScore = p.StrategicScore,
+            StrategicScore = p.StrategicCriteria.Sum(sc => (decimal)(int)sc.Score),
             CreatedAt = p.CreatedAt,
             UpdatedAt = p.UpdatedAt,
             DepartmentId = p.DepartmentId,
-            DepartmentName = department?.Name ?? string.Empty,
-            BusinessUnitName = department?.BusinessUnit?.Name ?? string.Empty,
-            PlantName = department?.Plant?.Name ?? string.Empty,
+            DepartmentName = p.Department?.Name ?? department?.Name ?? string.Empty,
+            PlantName = p.Department?.Plant?.Name
+                ?? department?.Plant?.Name
+                ?? string.Empty,
             ParentProjectId = p.ParentProjectId,
             ParentProjectName = p.ParentProject?.Name,
             BusinessUnits = p.ProjectBusinessUnits
@@ -54,12 +56,18 @@ namespace PMHUB.Application.Mappings
              Members = p.ProjectMembers
                 .Select(pm => new ProjectMemberDto
                 {
+                    ProjectMemberId = pm.Id,
                     UserId = pm.UserId,
                     FullName = $"{pm.User?.FirstName} {pm.User?.LastName}",
+                    Email = pm.User?.Email,
                     RoleId = pm.RoleId,
                     RoleName = pm.Role?.Name,
                     JoinedAt = pm.JoinedAt
                 }).ToList(),
+            InternMembers = p.InternAllocations
+                .OrderByDescending(ia => ia.CreatedAt)
+                .Select(ProjectInternMapper.ToDto)
+                .ToList(),
              KPIs = p.KPIs.Select(k => new KpiDto
             {
                 Id = k.Id,
@@ -87,7 +95,7 @@ namespace PMHUB.Application.Mappings
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt
             }).ToList(),
-             StrategicCriteria = p.StrategicCriteria.Select(sc => new StrategicCriterionDto
+            StrategicCriteria = p.StrategicCriteria.Select(sc => new StrategicCriterionDto
             {
                 Id = sc.Id,
                 Type = sc.Type,
@@ -96,6 +104,19 @@ namespace PMHUB.Application.Mappings
                 CreatedAt = sc.CreatedAt,
                 UpdatedAt = sc.UpdatedAt
             }).ToList(),
+            Deliverables = p.Deliverables
+                .OrderBy(d => d.CreatedAt)
+                .Select(ProjectPlanningMapper.ToDto)
+                .ToList(),
+            TimelineEntries = p.TimelineEntries
+                .OrderBy(t => t.PhaseOrder)
+                .ThenBy(t => t.Date)
+                .Select(ProjectPlanningMapper.ToDto)
+                .ToList(),
+            RoadblockEntries = p.RoadblockEntries
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(ProjectPlanningMapper.ToDto)
+                .ToList(),
             SubProjects = p.SubProjects.Select(ToSummaryDto).ToList()
         };
 
@@ -105,11 +126,16 @@ namespace PMHUB.Application.Mappings
             Name = p.Name,
             Status = p.Status,
             Phase = p.Phase,
+            ProjectType = p.ProjectType,
             StartDate = p.StartDate,
             EndDate = p.EndDate,
             Budget = p.Budget,
             DepartmentName = p.Department?.Name ?? string.Empty,
-            PlantName = p.Department?.Plant?.Name ?? string.Empty
+            PlantName = p.Department?.Plant?.Name ?? string.Empty,
+            Sponsor = p.Sponsor ?? string.Empty,
+            EstimatedHours = p.EstimatedHours,
+            ActualHours = p.ActualHours
         };
     }
+
 }

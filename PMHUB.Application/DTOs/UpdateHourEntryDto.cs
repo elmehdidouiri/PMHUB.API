@@ -1,6 +1,7 @@
-﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using PMHUB.Domain.Enums;
+using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -9,28 +10,30 @@ namespace PMHUB.Application.DTOs
 {
     public class UpdateHourEntryDto
     {
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        public BookingType? BookingType { get; set; }
+
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal ExecutionHours { get; set; }
 
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal SupervisionHours { get; set; }
 
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal ProcessHours { get; set; }
 
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal ManagementHours { get; set; }
 
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal RAndDHours { get; set; }
 
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal WorkshopHours { get; set; }
 
-        [Range(0, 24, ErrorMessage = "Les heures doivent être entre 0 et 24")]
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal OtherHours { get; set; }
 
-        [MaxLength(500, ErrorMessage = "Les notes ne peuvent pas dépasser 500 caractères")]
+        [MaxLength(500, ErrorMessage = "Notes cannot exceed 500 characters.")]
         public string? Notes { get; set; }
     }
 }

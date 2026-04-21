@@ -106,7 +106,7 @@ namespace PMHUB.Application.Services
             {
                 _logger.LogWarning("Impossible de supprimer le plant {PlantId} : départements actifs", id);
                 throw new BadRequestException(
-                    "Impossible de supprimer ce plant car il contient des départements actifs.");
+                    "This plant cannot be deleted because it still contains active departments.");
             }
 
             _plantRepository.Remove(plant);

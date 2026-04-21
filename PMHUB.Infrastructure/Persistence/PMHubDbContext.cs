@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PMHUB.Domain.Entities;
 
 namespace PMHUB.Infrastructure.Persistence
@@ -29,9 +29,19 @@ namespace PMHUB.Infrastructure.Persistence
         public DbSet<ProjectTask> Tasks { get; set; } = null!;
         public DbSet<Sprint> Sprints { get; set; } = null!;
 
+        // ── Deliverables Breakdown
+        public DbSet<DeliverableBreakdown> DeliverableBreakdowns { get; set; } = null!;
+        public DbSet<DeliverableTask> DeliverableTasks { get; set; } = null!;
+
+        // ── Timeline & Roadblocks
+        public DbSet<ProjectTimelineEntry> ProjectTimelineEntries { get; set; } = null!;
+        public DbSet<ProjectRoadblock> ProjectRoadblocks { get; set; } = null!;
+
         // ── Allocations  
         public DbSet<HourEntry> HourEntries { get; set; } = null!;
          public DbSet<InternAllocation> InternAllocations { get; set; } = null!;
+        public DbSet<InternHourEntry> InternHourEntries { get; set; } = null!;
+        public DbSet<HourEntryInternSupervision> HourEntryInternSupervisions { get; set; } = null!;
  
         // ── Autres  
         public DbSet<KPI> KPIs { get; set; } = null!;
@@ -39,6 +49,7 @@ namespace PMHUB.Infrastructure.Persistence
         public DbSet<ProjectFile> ProjectFiles { get; set; } = null!;
         public DbSet<ProjectResource> ProjectResources { get; set; } = null!;
         public DbSet<StrategicCriterion> StrategicCriteria { get; set; } = null!;
+        public DbSet<ProjectFileVersion> ProjectFileVersions { get; set; } = null!;
 
         // ── Many-to-Many  
         public DbSet<ProjectBusinessUnit> ProjectBusinessUnits { get; set; } = null!;
@@ -88,6 +99,12 @@ namespace PMHUB.Infrastructure.Persistence
 
             // ── Intern  
             builder.Entity<Intern>()
+                .HasOne(i => i.Role)
+                .WithMany()
+                .HasForeignKey(i => i.RoleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<Intern>()
                 .HasOne(i => i.Supervisor)
                 .WithMany()
                 .HasForeignKey(i => i.SupervisorId)
@@ -131,7 +148,7 @@ namespace PMHUB.Infrastructure.Persistence
             // ── Project → Sprints  
             builder.Entity<Sprint>()
                 .HasOne(s => s.Project)
-                .WithMany(p => p.Sprints)
+                .WithMany()
                 .HasForeignKey(s => s.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
 
@@ -140,6 +157,34 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasMany(p => p.Tasks)
                 .WithOne(t => t.Project)
                 .HasForeignKey(t => t.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ── Project → Deliverables
+            builder.Entity<Project>()
+                .HasMany(p => p.Deliverables)
+                .WithOne(d => d.Project)
+                .HasForeignKey(d => d.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ── Project → Timeline entries
+            builder.Entity<Project>()
+                .HasMany(p => p.TimelineEntries)
+                .WithOne(t => t.Project)
+                .HasForeignKey(t => t.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ── Project → Roadblocks
+            builder.Entity<Project>()
+                .HasMany(p => p.RoadblockEntries)
+                .WithOne(r => r.Project)
+                .HasForeignKey(r => r.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ── Deliverables → Deliverable Tasks
+            builder.Entity<DeliverableBreakdown>()
+                .HasMany(d => d.Tasks)
+                .WithOne(t => t.Deliverable)
+                .HasForeignKey(t => t.DeliverableId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // ── Sprint → Tasks  
@@ -167,6 +212,24 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(ia => ia.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            builder.Entity<InternAllocation>()
+                .HasOne(ia => ia.Intern)
+                .WithMany()
+                .HasForeignKey(ia => ia.InternId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<InternAllocation>()
+                .HasMany(ia => ia.InternHourEntries)
+                .WithOne(ihe => ihe.InternAllocation)
+                .HasForeignKey(ihe => ihe.InternAllocationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<InternHourEntry>()
+                .HasOne(ihe => ihe.BookedByUser)
+                .WithMany()
+                .HasForeignKey(ihe => ihe.BookedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // ── Project → HourEntries  
             builder.Entity<Project>()
                 .HasMany(p => p.HourEntries)
@@ -182,6 +245,19 @@ namespace PMHUB.Infrastructure.Persistence
                 .WithMany(u => u.HourEntries)
                 .HasForeignKey(h => h.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // ── HourEntry → InternSupervisions
+            builder.Entity<HourEntryInternSupervision>()
+                .HasOne(s => s.HourEntry)
+                .WithMany(h => h.InternSupervisions)
+                .HasForeignKey(s => s.HourEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<HourEntryInternSupervision>()
+                .HasOne(s => s.InternAllocation)
+                .WithMany()
+                .HasForeignKey(s => s.InternAllocationId)
+                .OnDelete(DeleteBehavior.Restrict);
  
             // ── Project → collections  
             builder.Entity<Project>()
@@ -190,10 +266,37 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasForeignKey(k => k.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // ── DeliverableTask → Assigned resource (ProjectMember / InternAllocation)
+            builder.Entity<DeliverableTask>()
+                .HasOne(t => t.ProjectMember)
+                .WithMany()
+                .HasForeignKey(t => t.ProjectMemberId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            builder.Entity<DeliverableTask>()
+                .HasOne(t => t.InternAllocation)
+                .WithMany()
+                .HasForeignKey(t => t.InternAllocationId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // ── Timeline sponsor (NormalUser)
+            builder.Entity<ProjectTimelineEntry>()
+                .HasOne(t => t.SponsorUser)
+                .WithMany()
+                .HasForeignKey(t => t.SponsorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.Entity<Project>()
                 .HasMany(p => p.ProjectFiles)
                 .WithOne(f => f.Project)
                 .HasForeignKey(f => f.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // ProjectFile → versions (historique)
+            builder.Entity<ProjectFile>()
+                .HasMany(f => f.Versions)
+                .WithOne(v => v.ProjectFile)
+                .HasForeignKey(v => v.ProjectFileId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             builder.Entity<Project>()
@@ -306,21 +409,6 @@ namespace PMHUB.Infrastructure.Persistence
             builder.Entity<Holiday>()
                 .HasIndex(h => new { h.Date, h.Country });
 
-            // ── HourEntry - Nouvelles colonnes
-            builder.Entity<HourEntry>()
-                .Property(h => h.HourlyRateAmount)
-                .HasColumnType("decimal(10,2)");
-
-            builder.Entity<HourEntry>()
-                .Property(h => h.TotalCost)
-                .HasColumnType("decimal(10,2)");
-
-            builder.Entity<HourEntry>()
-                .HasIndex(h => h.WeekBatchId);
-
-            builder.Entity<HourEntry>()
-                .HasIndex(h => new { h.IsPremium, h.PremiumApprovalStatus });
-
             // ── Index performances  
             builder.Entity<Department>().HasIndex(d => d.BusinessUnitId);
             builder.Entity<Department>().HasIndex(d => d.PlantId);
@@ -355,12 +443,50 @@ namespace PMHUB.Infrastructure.Persistence
                 .Property(i => i.HoursWorked)
                 .HasColumnType("decimal(18,2)");
 
+            builder.Entity<InternAllocation>()
+                .HasIndex(i => new { i.ProjectId, i.InternId })
+                .IsUnique();
+
+            builder.Entity<InternHourEntry>()
+                .Property(i => i.Hours)
+                .HasColumnType("decimal(5,2)");
+
+            builder.Entity<InternHourEntry>()
+                .HasIndex(i => i.InternAllocationId);
+
+            builder.Entity<InternHourEntry>()
+                .HasIndex(i => new { i.InternAllocationId, i.Date });
+
             builder.Entity<Project>()
                 .Property(p => p.EstimatedHours)
                 .HasColumnType("decimal(18,2)");
 
             builder.Entity<Project>()
+                .Property(p => p.ActualHours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<Project>()
                 .Property(p => p.StrategicScore)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<DeliverableTask>()
+                .Property(t => t.DevHours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<DeliverableTask>()
+                .Property(t => t.UxHours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<DeliverableTask>()
+                .Property(t => t.TestingHours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<DeliverableTask>()
+                .Property(t => t.Hours)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<DeliverableTask>()
+                .Property(t => t.EstimatedHours)
                 .HasColumnType("decimal(18,2)");
  
              builder.Entity<HourEntry>()
@@ -394,11 +520,21 @@ namespace PMHUB.Infrastructure.Persistence
             builder.Entity<HourEntry>()
                 .Property(h => h.TotalHours)
                 .HasColumnType("decimal(5,2)");
+
+            builder.Entity<HourEntry>()
+                .Property(h => h.InternManagementHours)
+                .HasColumnType("decimal(5,2)");
             builder.Entity<HourEntry>()
                 .HasIndex(h => h.UserId);
 
             builder.Entity<HourEntry>()
                 .HasIndex(h => new { h.UserId, h.Date });
+
+            // Un seul booking/jour en mode `Daily` (User + Project + Date)
+            builder.Entity<HourEntry>()
+                .HasIndex(h => new { h.UserId, h.ProjectId, h.Date })
+                .IsUnique()
+                .HasFilter("[AllocationType] = 0");
             builder.Entity<HourEntry>()
                 .Property(h => h.HourlyRateAmount)
                 .HasColumnType("decimal(10,2)");

@@ -1,4 +1,4 @@
-﻿ using PMHUB.Application.DTOs;
+ using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -34,6 +34,7 @@ namespace PMHUB.Application.Mappings
                 RAndDHours = entry.RAndDHours,
                 WorkshopHours = entry.WorkshopHours,
                 OtherHours = entry.OtherHours,
+                InternManagementHours = entry.InternManagementHours,
 
                 TotalHours = entry.TotalHours,
 
@@ -46,6 +47,12 @@ namespace PMHUB.Application.Mappings
                 PremiumApprovalStatus = entry.PremiumApprovalStatus?.ToString(),
 
                 Notes = entry.Notes,
+                SupervisedInterns = entry.InternSupervisions?.Select(s => new DetailInternSupervisionDto
+                {
+                    InternId = s.InternAllocation?.InternId ?? Guid.Empty,
+                    InternName = s.InternAllocation?.Intern?.Name ?? "N/A",
+                    Hours = s.Hours
+                }).ToList() ?? new List<DetailInternSupervisionDto>(),
                 CreatedAt = entry.CreatedAt,
                 UpdatedAt = entry.UpdatedAt
             };

@@ -26,5 +26,6 @@ namespace PMHUB.Application.DTOs
         public string? Description { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        public ICollection<ProjectFileVersionDto> Versions { get; set; } = new List<ProjectFileVersionDto>();
     }
 }

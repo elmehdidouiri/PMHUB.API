@@ -8,8 +8,9 @@ namespace PMHUB.Domain.Enums
 {
     public enum ProjectStatus
     {
-        Ongoing,
-        OnHold,
-        Done
+        Ongoing = 0,
+        OnHold = 1,
+        Done = 2,
+        Planned = 3
     }
 }

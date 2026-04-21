@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PMHUB.Infrastructure.Persistence;
 using System.Linq.Expressions;
 
@@ -7,7 +7,7 @@ namespace PMHUB.Infrastructure.Repositories.Generique
     public class Repository<T> : IRepository<T> where T : class
     {
         protected readonly PMHubDbContext _context;
-        private readonly DbSet<T> _dbSet;
+        protected readonly DbSet<T> _dbSet;
 
         public Repository(PMHubDbContext context)
         {

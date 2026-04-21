@@ -3,43 +3,33 @@ using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using PMHUB.Application.DTOs;
- using PMHUB.Application.IServices;
+using PMHUB.Application.IServices;
+using System.Reflection;
 
 namespace PMHUB.Infrastructure.Services
 {
     public class EmailService : IEmailService
     {
         private readonly EmailSettings _settings;
+        private readonly string _templatesFolder;
 
         public EmailService(IOptions<EmailSettings> settings)
         {
             _settings = settings.Value;
+            _templatesFolder = Path.Combine(
+                Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppContext.BaseDirectory,
+                "Email",
+                "Templates");
         }
 
-         public async Task SendConfirmationEmailAsync(
+        public async Task SendConfirmationEmailAsync(
             string toEmail, string firstName, string confirmationLink)
         {
             var subject = "Confirmez votre email PMHub";
-            var body = $@"
-                <h2>Bonjour {firstName},</h2>
-                <p>Merci pour votre inscription sur <strong>PMHub</strong> !</p>
-                <p>Cliquez sur le bouton ci-dessous pour confirmer votre adresse email :</p>
-                <br/>
-                <a href='{confirmationLink}'
-                   style='background-color:#4CAF50;
-                          color:white;
-                          padding:12px 24px;
-                          text-decoration:none;
-                          border-radius:4px;
-                          display:inline-block;'>
-                    Confirmer mon email
-                </a>
-                <br/><br/>
-                <p>Ce lien expire dans <strong>24 heures</strong>.</p>
-                <p>Si vous n'avez pas créé de compte, ignorez cet email.</p>
-                <br/>
-                <p>Cordialement,</p>
-                <p><strong>L'équipe PMHub</strong></p>";
+            var body = await LoadTemplateAsync(
+                "confirmation-email.html",
+                ("FirstName", firstName),
+                ("ConfirmationLink", confirmationLink));
 
             await SendEmailAsync(toEmail, subject, body);
         }
@@ -48,41 +38,36 @@ namespace PMHUB.Infrastructure.Services
         public async Task SendApprovalEmailAsync(string toEmail, string firstName)
         {
             var subject = "Votre compte PMHub a été approuvé !";
-            var body = $@"
-                <h2>Bonjour {firstName},</h2>
-                <p>Bonne nouvelle ! Votre compte PMHub a été 
-                   <strong>approuvé</strong> par l'administrateur.</p>
-                <p>Vous pouvez maintenant vous connecter et accéder à la plateforme.</p>
-                <br/>
-                <a href='https://pmhub.com/login'
-                   style='background-color:#4CAF50;
-                          color:white;
-                          padding:12px 24px;
-                          text-decoration:none;
-                          border-radius:4px;
-                          display:inline-block;'>
-                    Se connecter
-                </a>
-                <br/><br/>
-                <p>Cordialement,</p>
-                <p><strong>L'équipe PMHub</strong></p>";
+            var body = await LoadTemplateAsync(
+                "approval-email.html",
+                ("FirstName", firstName));
 
             await SendEmailAsync(toEmail, subject, body);
         }
 
-         public async Task SendRejectionEmailAsync(string toEmail, string firstName)
+        public async Task SendRejectionEmailAsync(string toEmail, string firstName)
         {
             var subject = "Votre demande d'accès PMHub a été refusée";
-            var body = $@"
-                <h2>Bonjour {firstName},</h2>
-                <p>Votre demande d'accès à la plateforme PMHub a été 
-                   <strong>refusée</strong> par l'administrateur.</p>
-                <p>Pour plus d'informations, veuillez contacter l'administrateur.</p>
-                <br/>
-                <p>Cordialement,</p>
-                <p><strong>L'équipe PMHub</strong></p>";
+            var body = await LoadTemplateAsync(
+                "rejection-email.html",
+                ("FirstName", firstName));
 
             await SendEmailAsync(toEmail, subject, body);
+        }
+
+        private async Task<string> LoadTemplateAsync(string fileName, params (string Key, string Value)[] values)
+        {
+            var templatePath = Path.Combine(_templatesFolder, fileName);
+            if (!File.Exists(templatePath))
+                throw new FileNotFoundException($"Email template not found: {templatePath}");
+
+            var html = await File.ReadAllTextAsync(templatePath);
+            foreach (var (key, value) in values)
+            {
+                html = html.Replace($"{{{{{key}}}}}", value ?? string.Empty, StringComparison.Ordinal);
+            }
+
+            return html;
         }
 
         // ── HELPER 

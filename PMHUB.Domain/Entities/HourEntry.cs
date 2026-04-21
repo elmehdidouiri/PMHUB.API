@@ -1,9 +1,8 @@
-﻿// Fichier : PMHUB.Domain/Entities/HourEntry.cs
+// Fichier : PMHUB.Domain/Entities/HourEntry.cs
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Linq;
 using PMHUB.Domain.Enums;
 using PMHUB.Domain.ValueObjects;
 
@@ -59,6 +58,15 @@ namespace PMHUB.Domain.Entities
         public decimal OtherHours { get; set; }
 
         [Column(TypeName = "decimal(5,2)")]
+        public decimal InternManagementHours { get; set; }
+
+        public ICollection<HourEntryInternSupervision> InternSupervisions { get; set; } = new List<HourEntryInternSupervision>();
+
+        public const decimal ExpectedMonthlyHours = 161.5m;
+        public const decimal HoursPerDay = 9.0m;
+        public const int WorkingDaysPerMonth = 22;
+
+        [Column(TypeName = "decimal(5,2)")]
         public decimal TotalHours { get; private set; }
 
         public bool IsPremium { get; private set; }
@@ -91,10 +99,11 @@ namespace PMHUB.Domain.Entities
                 ManagementHours,
                 RAndDHours,
                 WorkshopHours,
-                OtherHours);
+                OtherHours,
+                InternManagementHours);
         }
 
-        public void Calculate(UserHourlyRate userRate, IEnumerable<Holiday> holidays)
+        public void Calculate(UserHourlyRate userRate, bool isPremiumSelected)
         {
             if (userRate == null)
                 throw new ArgumentNullException(nameof(userRate));
@@ -102,7 +111,7 @@ namespace PMHUB.Domain.Entities
             var breakdown = GetHourBreakdown();
             TotalHours = breakdown.Total;
 
-            DeterminePremiumStatus(holidays);
+            DeterminePremiumStatus(isPremiumSelected);
 
             var rate = (IsPremium && PremiumApprovalStatus == ApprovalStatus.Approved)
                 ? userRate.GetPremiumRate()
@@ -117,28 +126,13 @@ namespace PMHUB.Domain.Entities
             UpdatedAt = DateTime.UtcNow;
         }
 
-        private void DeterminePremiumStatus(IEnumerable<Holiday> holidays)
+        private void DeterminePremiumStatus(bool isPremiumSelected)
         {
-            var dayOfWeek = Date.DayOfWeek;
-            var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
-            var isHoliday = holidays.Any(h => h.Date.Date == Date.Date && h.IsActive);
-
-            if (isWeekend)
+            // La prime est désormais choisie par l'utilisateur (pas de détection automatique).
+            if (isPremiumSelected)
             {
                 IsPremium = true;
-                PremiumReason = Enums.PremiumReason.Weekend;
-                PremiumApprovalStatus = ApprovalStatus.Pending;
-            }
-            else if (isHoliday)
-            {
-                IsPremium = true;
-                PremiumReason = Enums.PremiumReason.Holiday;
-                PremiumApprovalStatus = ApprovalStatus.Pending;
-            }
-            else if (TotalHours > 9m)
-            {
-                IsPremium = true;
-                PremiumReason = Enums.PremiumReason.Overtime;
+                PremiumReason = Enums.PremiumReason.SelectedByUser;
                 PremiumApprovalStatus = ApprovalStatus.Pending;
             }
             else

@@ -1,7 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
+using PMHUB.Application.Mappings.EntityDto;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Repositories;
 using Task = System.Threading.Tasks.Task;
@@ -36,8 +37,8 @@ namespace PMHUB.Application.Services
                 throw new ConflictException("User", dto.Email);
             }
 
-            await (_roleRepository.GetByIdAsync(dto.RoleId)
-                ?? throw new NotFoundException("Role", dto.RoleId));
+            await (_roleRepository.GetByIdAsync(dto.RoleId.Value)
+                ?? throw new NotFoundException("Role", dto.RoleId.Value));
 
              var user = new NormalUser
             {
@@ -45,7 +46,7 @@ namespace PMHUB.Application.Services
                 LastName = dto.LastName,
                 Email = dto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                RoleId = dto.RoleId,
+                RoleId = dto.RoleId.Value,
                 IsApproved = false,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
@@ -56,7 +57,7 @@ namespace PMHUB.Application.Services
             await _userRepository.SaveChangesAsync();
 
             _logger.LogInformation("Utilisateur {UserId} créé avec succès", user.Id);
-            return MapToDto(user);
+            return UserEntityDtoMapper.ToDto(user);
         }
 
         // ── GET BY ID 
@@ -67,21 +68,21 @@ namespace PMHUB.Application.Services
             var user = await _userRepository.GetByIdWithRoleAsync(id)
                 ?? throw new NotFoundException("User", id);
 
-            return MapToDto(user);
+            return UserEntityDtoMapper.ToDto(user);
         }
 
         // ── GET BY EMAIL  
         public async Task<UserDto?> GetByEmailAsync(string email)
         {
             if (string.IsNullOrWhiteSpace(email))
-                throw new BadRequestException("L'email ne peut pas être vide.");
+            throw new BadRequestException("Email cannot be empty.");
 
             _logger.LogInformation("Récupération de l'utilisateur avec l'email {Email}", email);
 
             var user = await _userRepository.GetByEmailAsync(email)
                 ?? throw new NotFoundException("User", email);
 
-            return MapToDto(user);
+            return UserEntityDtoMapper.ToDto(user);
         }
 
         // ── GET ALL 
@@ -89,7 +90,18 @@ namespace PMHUB.Application.Services
         {
             _logger.LogInformation("Récupération de tous les utilisateurs");
             var users = await _userRepository.GetAllWithRoleAsync();
-            return users.Select(MapToDto);
+            return users.Select(UserEntityDtoMapper.ToDto);
+        }
+
+        public async Task<IEnumerable<UserDto>> GetByRoleIdAsync(Guid roleId)
+        {
+            _logger.LogInformation("Récupération des utilisateurs pour le rôle {RoleId}", roleId);
+
+            await (_roleRepository.GetByIdAsync(roleId)
+                ?? throw new NotFoundException("Role", roleId));
+
+            var users = await _userRepository.GetByRoleIdAsync(roleId);
+            return users.Select(UserEntityDtoMapper.ToDto);
         }
 
         // ── UPDATE 
@@ -169,7 +181,7 @@ namespace PMHUB.Application.Services
                 ?? throw new NotFoundException("Admin", adminId);
 
             if (user.IsApproved && dto.IsApproved)
-                throw new BadRequestException("Cet utilisateur est déjà approuvé.");
+            throw new BadRequestException("This user has already been approved.");
 
             user.IsApproved = dto.IsApproved;
             user.ApprovedAt = DateTime.UtcNow;
@@ -188,7 +200,7 @@ namespace PMHUB.Application.Services
             _logger.LogInformation("Validation de login pour l'email {Email}", email);
 
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
-                throw new BadRequestException("Email et mot de passe sont obligatoires.");
+            throw new BadRequestException("Email and password are required.");
 
             var user = await _userRepository.GetByEmailAsync(email)
                 ?? throw new NotFoundException("User", email);
@@ -196,37 +208,18 @@ namespace PMHUB.Application.Services
              if (user is NormalUser normalUser)
             {
                 if (!normalUser.IsActive)
-                    throw new ForbiddenException("Ce compte est désactivé.");
+            throw new ForbiddenException("This account is deactivated.");
 
                 if (!normalUser.IsApproved)
-                    throw new ForbiddenException("Ce compte n'est pas encore approuvé.");
+            throw new ForbiddenException("This account has not been approved yet.");
             }
 
             if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
-                throw new BadRequestException("Email ou mot de passe incorrect.");
+            throw new BadRequestException("Invalid email or password.");
 
             _logger.LogInformation("Login validé pour l'utilisateur {UserId}", user.Id);
             return true;
         }
 
-        // ── MAPPER 
-        private static UserDto MapToDto(User user)
-        {
-             var normalUser = user as NormalUser;
-
-            return new UserDto
-            {
-                Id = user.Id,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Email = user.Email,
-                RoleId = normalUser?.RoleId ?? Guid.Empty,
-                RoleName = normalUser?.Role?.Name,
-                IsApproved = normalUser?.IsApproved ?? false,
-                IsActive = normalUser?.IsActive ?? false,
-                CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
-            };
-        }
     }
 }

@@ -1,9 +1,10 @@
-﻿ namespace PMHUB.Domain.Enums
+ namespace PMHUB.Domain.Enums
 {
     public enum PremiumReason
     {
         Weekend = 0,
         Holiday = 1,
-        Overtime = 2   
+        Overtime = 2,
+        SelectedByUser = 3
     }
 }

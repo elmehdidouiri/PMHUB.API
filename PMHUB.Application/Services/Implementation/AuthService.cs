@@ -1,10 +1,11 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.Interfaces;
 using PMHUB.Application.IServices;
+using PMHUB.Application.Mappings.EntityDto;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Repositories;
 using System.IdentityModel.Tokens.Jwt;
@@ -41,7 +42,7 @@ namespace PMHUB.Application.Services.Implementation
  
         }
 
-        // ── REGISTER  
+        // -- REGISTER  
         public async Task RegisterAsync(RegisterDto dto)
         {
             _logger.LogInformation("Nouvelle tentative d'inscription pour {Email}", dto.Email);
@@ -50,8 +51,8 @@ namespace PMHUB.Application.Services.Implementation
             if (existingUsers.Any())
                 throw new ConflictException("User", dto.Email);
 
-             var role = await _roleRepository.GetByIdAsync(dto.RoleId)
-                ?? throw new NotFoundException("Role", dto.RoleId);
+             var role = await _roleRepository.GetByIdAsync(dto.RoleId.Value)
+                ?? throw new NotFoundException("Role", dto.RoleId.Value);
 
             var newUser = new NormalUser
             {
@@ -59,7 +60,7 @@ namespace PMHUB.Application.Services.Implementation
                 LastName = dto.LastName,
                 Email = dto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                RoleId = dto.RoleId,
+                RoleId = dto.RoleId.Value,
                 IsApproved = false,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
@@ -68,33 +69,33 @@ namespace PMHUB.Application.Services.Implementation
             await _userRepository.AddAsync(newUser);
             await _userRepository.SaveChangesAsync();
 
-            _logger.LogInformation("Utilisateur {UserId} créé avec succès.", newUser.Id);
+            _logger.LogInformation("Utilisateur {UserId} cree avec succes.", newUser.Id);
         }
 
 
-        // ── LOGIN 
+        // -- LOGIN 
         public async Task<AuthSuccessDto> LoginAsync(LoginDto dto)
         {
             _logger.LogInformation("Tentative de connexion pour {Email}", dto.Email);
 
             var user = await _userRepository.GetByEmailAsync(dto.Email)
-                ?? throw new UnauthorizedException("Email ou mot de passe incorrect.");
+                ?? throw new UnauthorizedException("Invalid email or password.");
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
                 _logger.LogWarning("Mot de passe incorrect pour {Email}", dto.Email);
-                throw new UnauthorizedException("Email ou mot de passe incorrect.");
+                throw new UnauthorizedException("Invalid email or password.");
             }
 
             if (user is NormalUser normalUser)
             {
                 if (!normalUser.IsActive)
-                    throw new ForbiddenException("Ce compte est désactivé.");
+                    throw new ForbiddenException("This account is deactivated.");
 
                 if (!normalUser.IsApproved)
-                    throw new ForbiddenException("Votre compte doit être approuvé par un admin.");
+                    throw new ForbiddenException("Your account must be approved by an administrator before you can sign in.");
 
-                _logger.LogInformation("NormalUser {UserId} connecté avec succès", user.Id);
+                _logger.LogInformation("NormalUser {UserId} connecte avec succes", user.Id);
                 return GenerateToken(user, normalUser.Role?.Name ?? string.Empty, false);
             }
             if (user is Admin admin)
@@ -104,42 +105,26 @@ namespace PMHUB.Application.Services.Implementation
                 _userRepository.Update(admin);
                 await _userRepository.SaveChangesAsync();
 
-                _logger.LogInformation("Admin {UserId} connecté avec succès", user.Id);
+                _logger.LogInformation("Admin {UserId} connecte avec succes", user.Id);
                 return GenerateToken(user, "Admin", true);
             }
 
-            throw new UnauthorizedException("Type d'utilisateur non reconnu.");
+            throw new UnauthorizedException("The authenticated user type is not supported.");
         }
 
-        // ── GET PENDING USERS  
+        // -- GET PENDING USERS  
         public async Task<IEnumerable<UserDto>> GetPendingUsersAsync()
         {
-            _logger.LogInformation("Récupération des utilisateurs en attente d'approbation");
+            _logger.LogInformation("Recuperation des utilisateurs en attente d'approbation");
 
             var pendingUsers = await _userRepository.FindAsync(
                 u => u is NormalUser && !((NormalUser)u).IsApproved);
 
-            return pendingUsers.Select(u =>
-            {
-                var normalUser = u as NormalUser;
-                return new UserDto
-                {
-                    Id = u.Id,
-                    FirstName = u.FirstName,
-                    LastName = u.LastName,
-                    Email = u.Email,
-                    RoleId = normalUser?.RoleId ?? Guid.Empty,
-                    RoleName = normalUser?.Role?.Name,
-                    IsApproved = normalUser?.IsApproved ?? false,
-                    IsActive = normalUser?.IsActive ?? false,
-                    CreatedAt = u.CreatedAt,
-                    UpdatedAt = u.UpdatedAt
-                };
-            });
+            return pendingUsers.Select(UserEntityDtoMapper.ToDto);
         }
 
 
-        // ── APPROVE / DECLINE  
+        // -- APPROVE / DECLINE  
         public async Task ApproveUserAsync(ApproveUserDto dto, Guid adminId)
         {
             _logger.LogInformation("Approbation/Refus utilisateur {UserId}", dto.UserId);
@@ -148,7 +133,7 @@ namespace PMHUB.Application.Services.Implementation
                 ?? throw new NotFoundException("User", dto.UserId);
 
             if (user.IsApproved && dto.IsApproved)
-                throw new BadRequestException("Cet utilisateur est déjà approuvé.");
+                throw new BadRequestException("This user has already been approved.");
 
             if (dto.IsApproved)
             {
@@ -170,19 +155,19 @@ namespace PMHUB.Application.Services.Implementation
 
             if (dto.IsApproved)
             {
-                _logger.LogInformation("Envoi email approbation à {Email}", user.Email);
+                _logger.LogInformation("Envoi email approbation a {Email}", user.Email);
                 await _emailService.SendApprovalEmailAsync(user.Email, user.FirstName);
             }
             else
             {
-                _logger.LogInformation("Envoi email rejet à {Email}", user.Email);
+                _logger.LogInformation("Envoi email rejet a {Email}", user.Email);
                 await _emailService.SendRejectionEmailAsync(user.Email, user.FirstName);
             }
 
-            _logger.LogInformation("Utilisateur {UserId} — IsApproved={IsApproved}",
+            _logger.LogInformation("Utilisateur {UserId} - IsApproved={IsApproved}",
                 dto.UserId, dto.IsApproved);
         }
-        // ── HELPER — Générer JWT  
+        // -- HELPER - Generer JWT  
         private AuthSuccessDto GenerateToken(User user, string roleName, bool isAdmin)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -213,7 +198,6 @@ namespace PMHUB.Application.Services.Implementation
             return new AuthSuccessDto
             {
                 Token = tokenHandler.WriteToken(token),
-                Expiration = token.ValidTo,
                 UserId = user.Id,
                 FirstName = user.FirstName,
                 LastName = user.LastName,

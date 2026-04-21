@@ -22,7 +22,11 @@ namespace PMHUB.Application.Mappings
             FileSize = f.FileSize,
             Description = f.Description,
             CreatedAt = f.CreatedAt,
-            UpdatedAt = f.UpdatedAt
+            UpdatedAt = f.UpdatedAt,
+            Versions = f.Versions
+                .OrderByDescending(v => v.VersionNumber)
+                .Select(v => ProjectPlanningMapper.ToDto(v, storageService))
+                .ToList()
         };
 
         public static IEnumerable<ProjectFileDto> ToDtoList(

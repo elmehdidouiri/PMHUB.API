@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -8,8 +8,8 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateTechnologyDto
     {
-        [Required(ErrorMessage = "Le nom est obligatoire.")]
-        [MaxLength(100, ErrorMessage = "Le nom ne peut pas dépasser 100 caractères.")]
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(100, ErrorMessage = "Name cannot exceed 100 characters.")]
         public string Name { get; set; } = string.Empty;
     }
 }

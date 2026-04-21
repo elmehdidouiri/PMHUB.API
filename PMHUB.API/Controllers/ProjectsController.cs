@@ -1,10 +1,11 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
 using PMHUB.Domain.Enums;
 using PMHUB.Shared.Helpers;
+using System.Security.Claims;
 
 namespace PMHUB.API.Controllers
 {
@@ -44,6 +45,24 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<IEnumerable<ProjectSummaryDto>>.Ok(result));
         }
 
+        // Endpoint 1 : Les stats de l'utilisateur normal
+        [HttpGet("stats/me")]
+        public async Task<ActionResult<ApiResponse<DashboardStatsDto>>> GetMyStats()
+        {
+            var userId = GetAuthenticatedUserId(); // On récupère l'ID de celui qui requête
+            var result = await _service.GetUserDashboardStatsAsync(userId);
+            return Ok(ApiResponse<DashboardStatsDto>.Ok(result));
+        }
+
+        // Endpoint 2 : Les stats globales pour l'admin
+        [HttpGet("stats/admin")]
+        [Authorize(Policy = "AdminOnly")] // Important : Restreint aux administrateurs
+        public async Task<ActionResult<ApiResponse<DashboardStatsDto>>> GetAdminStats()
+        {
+            var result = await _service.GetAdminDashboardStatsAsync();
+            return Ok(ApiResponse<DashboardStatsDto>.Ok(result));
+        }
+
         // GET api/projects/paged
         [HttpGet("paged")]
         public async Task<ActionResult<ApiResponse<PaginatedResultDto<ProjectSummaryDto>>>> GetPaged(
@@ -58,6 +77,8 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<ProjectDto>>> GetById(Guid id)
         {
             var result = await _service.GetByIdAsync(id);
+            if (result is null)
+                return NotFound(ApiResponse<ProjectDto>.Fail("Project was not found."));
             return Ok(ApiResponse<ProjectDto>.Ok(result));
         }
 
@@ -161,6 +182,177 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse.Ok("Membre retiré du projet avec succès."));
         }
 
+        [HttpGet("{id:guid}/deliverables")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<DeliverableBreakdownDto>>>> GetDeliverables(Guid id)
+        {
+            var result = await _service.GetDeliverablesAsync(id);
+            return Ok(ApiResponse<IEnumerable<DeliverableBreakdownDto>>.Ok(result));
+        }
+
+        [HttpPost("{id:guid}/deliverables")]
+        public async Task<ActionResult<ApiResponse<DeliverableBreakdownDto>>> AddDeliverable(Guid id, [FromBody] CreateDeliverableBreakdownDto dto)
+        {
+            var result = await _service.AddDeliverableAsync(id, dto);
+            return Ok(ApiResponse<DeliverableBreakdownDto>.Ok(result, "Deliverable créé avec succès."));
+        }
+
+        [HttpPut("{id:guid}/deliverables/{deliverableId:guid}")]
+        public async Task<ActionResult<ApiResponse<DeliverableBreakdownDto>>> UpdateDeliverable(Guid id, Guid deliverableId, [FromBody] UpdateDeliverableBreakdownDto dto)
+        {
+            var result = await _service.UpdateDeliverableAsync(id, deliverableId, dto);
+            return Ok(ApiResponse<DeliverableBreakdownDto>.Ok(result, "Deliverable mis à jour avec succès."));
+        }
+
+        [HttpDelete("{id:guid}/deliverables/{deliverableId:guid}")]
+        public async Task<ActionResult<ApiResponse>> DeleteDeliverable(Guid id, Guid deliverableId)
+        {
+            await _service.DeleteDeliverableAsync(id, deliverableId);
+            return Ok(ApiResponse.Ok("Deliverable supprimé avec succès."));
+        }
+
+        [HttpPost("{id:guid}/deliverables/{deliverableId:guid}/tasks")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DeliverableTaskDto>>> AddDeliverableTask(Guid id, Guid deliverableId, [FromBody] CreateDeliverableTaskDto dto)
+        {
+            var result = await _service.AddDeliverableTaskAsync(id, deliverableId, dto);
+            return Ok(ApiResponse<DeliverableTaskDto>.Ok(result, "Task créée avec succès."));
+        }
+
+        [HttpPut("{id:guid}/deliverables/{deliverableId:guid}/tasks/{taskId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DeliverableTaskDto>>> UpdateDeliverableTask(Guid id, Guid deliverableId, Guid taskId, [FromBody] UpdateDeliverableTaskDto dto)
+        {
+            var result = await _service.UpdateDeliverableTaskAsync(id, deliverableId, taskId, dto);
+            return Ok(ApiResponse<DeliverableTaskDto>.Ok(result, "Task mise à jour avec succès."));
+        }
+
+        [HttpDelete("{id:guid}/deliverables/{deliverableId:guid}/tasks/{taskId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse>> DeleteDeliverableTask(Guid id, Guid deliverableId, Guid taskId)
+        {
+            await _service.DeleteDeliverableTaskAsync(id, deliverableId, taskId);
+            return Ok(ApiResponse.Ok("Task supprimée avec succès."));
+        }
+
+        [HttpGet("{id:guid}/timeline")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectTimelineEntryDto>>>> GetTimeline(Guid id)
+        {
+            var result = await _service.GetTimelineAsync(id);
+            return Ok(ApiResponse<IEnumerable<ProjectTimelineEntryDto>>.Ok(result));
+        }
+
+        [HttpPost("{id:guid}/timeline")]
+        public async Task<ActionResult<ApiResponse<ProjectTimelineEntryDto>>> AddTimelineEntry(Guid id, [FromBody] CreateProjectTimelineEntryDto dto)
+        {
+            var result = await _service.AddTimelineEntryAsync(id, dto);
+            return Ok(ApiResponse<ProjectTimelineEntryDto>.Ok(result, "Entrée timeline créée avec succès."));
+        }
+
+        [HttpPut("{id:guid}/timeline/{entryId:guid}")]
+        public async Task<ActionResult<ApiResponse<ProjectTimelineEntryDto>>> UpdateTimelineEntry(Guid id, Guid entryId, [FromBody] UpdateProjectTimelineEntryDto dto)
+        {
+            var result = await _service.UpdateTimelineEntryAsync(id, entryId, dto);
+            return Ok(ApiResponse<ProjectTimelineEntryDto>.Ok(result, "Entrée timeline mise à jour avec succès."));
+        }
+
+        [HttpDelete("{id:guid}/timeline/{entryId:guid}")]
+        public async Task<ActionResult<ApiResponse>> DeleteTimelineEntry(Guid id, Guid entryId)
+        {
+            await _service.DeleteTimelineEntryAsync(id, entryId);
+            return Ok(ApiResponse.Ok("Entrée timeline supprimée avec succès."));
+        }
+
+        [HttpGet("{id:guid}/roadblocks")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectRoadblockDto>>>> GetRoadblocks(Guid id)
+        {
+            var result = await _service.GetRoadblocksAsync(id);
+            return Ok(ApiResponse<IEnumerable<ProjectRoadblockDto>>.Ok(result));
+        }
+
+        [HttpGet("{id:guid}/roadblocks/delayed")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectRoadblockDto>>>> GetDelayedRoadblocks(Guid id)
+        {
+            var result = await _service.GetDelayedRoadblocksAsync(id);
+            return Ok(ApiResponse<IEnumerable<ProjectRoadblockDto>>.Ok(result));
+        }
+
+        [HttpPost("{id:guid}/roadblocks")]
+        public async Task<ActionResult<ApiResponse<ProjectRoadblockDto>>> AddRoadblock(Guid id, [FromBody] CreateProjectRoadblockDto dto)
+        {
+            var result = await _service.AddRoadblockAsync(id, dto);
+            return Ok(ApiResponse<ProjectRoadblockDto>.Ok(result, "Roadblock créé avec succès."));
+        }
+
+        [HttpPut("{id:guid}/roadblocks/{roadblockId:guid}")]
+        public async Task<ActionResult<ApiResponse<ProjectRoadblockDto>>> UpdateRoadblock(Guid id, Guid roadblockId, [FromBody] UpdateProjectRoadblockDto dto)
+        {
+            var result = await _service.UpdateRoadblockAsync(id, roadblockId, dto);
+            return Ok(ApiResponse<ProjectRoadblockDto>.Ok(result, "Roadblock mis à jour avec succès."));
+        }
+
+        [HttpDelete("{id:guid}/roadblocks/{roadblockId:guid}")]
+        public async Task<ActionResult<ApiResponse>> DeleteRoadblock(Guid id, Guid roadblockId)
+        {
+            await _service.DeleteRoadblockAsync(id, roadblockId);
+            return Ok(ApiResponse.Ok("Roadblock supprimé avec succès."));
+        }
+
+        [HttpGet("{id:guid}/interns")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectInternAllocationDto>>>> GetInternAllocations(Guid id)
+        {
+            var result = await _service.GetInternAllocationsAsync(id);
+            return Ok(ApiResponse<IEnumerable<ProjectInternAllocationDto>>.Ok(result));
+        }
+
+        [HttpPost("{id:guid}/interns")]
+        public async Task<ActionResult<ApiResponse<ProjectInternAllocationDto>>> AddInternAllocation(Guid id, [FromBody] CreateProjectInternAllocationDto dto)
+        {
+            var result = await _service.AddInternAllocationAsync(id, dto);
+            return Ok(ApiResponse<ProjectInternAllocationDto>.Ok(result, "Intern ajouté au projet avec succès."));
+        }
+
+        [HttpPut("{id:guid}/interns/{allocationId:guid}")]
+        public async Task<ActionResult<ApiResponse<ProjectInternAllocationDto>>> UpdateInternAllocation(Guid id, Guid allocationId, [FromBody] UpdateProjectInternAllocationDto dto)
+        {
+            var result = await _service.UpdateInternAllocationAsync(id, allocationId, dto);
+            return Ok(ApiResponse<ProjectInternAllocationDto>.Ok(result, "Allocation intern mise à jour avec succès."));
+        }
+
+        [HttpDelete("{id:guid}/interns/{allocationId:guid}")]
+        public async Task<ActionResult<ApiResponse>> DeleteInternAllocation(Guid id, Guid allocationId)
+        {
+            await _service.DeleteInternAllocationAsync(id, allocationId);
+            return Ok(ApiResponse.Ok("Allocation intern supprimée avec succès."));
+        }
+
+        [HttpGet("{id:guid}/interns/{allocationId:guid}/hours")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<InternHourEntryDto>>>> GetInternHourEntries(Guid id, Guid allocationId)
+        {
+            var result = await _service.GetInternHourEntriesAsync(id, allocationId);
+            return Ok(ApiResponse<IEnumerable<InternHourEntryDto>>.Ok(result));
+        }
+
+        [HttpPost("{id:guid}/interns/{allocationId:guid}/hours")]
+        public async Task<ActionResult<ApiResponse<InternHourEntryDto>>> AddInternHourEntry(Guid id, Guid allocationId, [FromBody] CreateInternHourEntryDto dto)
+        {
+            var result = await _service.AddInternHourEntryAsync(id, allocationId, dto, GetAuthenticatedUserId());
+            return Ok(ApiResponse<InternHourEntryDto>.Ok(result, "Heures de l'intern enregistrées avec succès."));
+        }
+
+        [HttpPut("{id:guid}/interns/{allocationId:guid}/hours/{hourEntryId:guid}")]
+        public async Task<ActionResult<ApiResponse<InternHourEntryDto>>> UpdateInternHourEntry(Guid id, Guid allocationId, Guid hourEntryId, [FromBody] UpdateInternHourEntryDto dto)
+        {
+            var result = await _service.UpdateInternHourEntryAsync(id, allocationId, hourEntryId, dto, GetAuthenticatedUserId());
+            return Ok(ApiResponse<InternHourEntryDto>.Ok(result, "Heures de l'intern mises à jour avec succès."));
+        }
+
+        [HttpDelete("{id:guid}/interns/{allocationId:guid}/hours/{hourEntryId:guid}")]
+        public async Task<ActionResult<ApiResponse>> DeleteInternHourEntry(Guid id, Guid allocationId, Guid hourEntryId)
+        {
+            await _service.DeleteInternHourEntryAsync(id, allocationId, hourEntryId, GetAuthenticatedUserId());
+            return Ok(ApiResponse.Ok("Entrée d'heures intern supprimée avec succès."));
+        }
+
         [HttpGet("export/monthly/{year}/{month}")]
         [Authorize(Policy = "AdminOnly")]
         public async Task<IActionResult> ExportMonthlyLink(int year, int month)
@@ -185,6 +377,15 @@ namespace PMHUB.API.Controllers
             var link = _excelService.GenerateYearlyExcel(data, companyYear);
 
             return Ok(new { url = link });
+        }
+
+        private Guid GetAuthenticatedUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrWhiteSpace(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            throw new UnauthorizedException("User is not authenticated.");
+
+            return userId;
         }
     }
 }

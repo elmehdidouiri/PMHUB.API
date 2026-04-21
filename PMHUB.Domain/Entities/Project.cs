@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using PMHUB.Domain.Enums;
 
@@ -61,13 +61,13 @@ namespace PMHUB.Domain.Entities
         [Required]
         public ProjectManagementType ProjectManagementType { get; set; }
 
+        [Required]
+        public ProjectType ProjectType { get; set; }
+
         public ProcessStatus ProcessStatus { get; set; } = ProcessStatus.NotStarted;
 
         [MaxLength(1000)]
         public string? CurrentState { get; set; }
-
-        [MaxLength(1000)]
-        public string? Roadblocks { get; set; }
 
         [MaxLength(1000)]
         public string? NextSteps { get; set; }
@@ -76,31 +76,42 @@ namespace PMHUB.Domain.Entities
         public string? Enhancements { get; set; }
 
         public decimal EstimatedHours { get; set; } = 0;
+        public decimal ActualHours { get; set; } = 0;
         public decimal StrategicScore { get; set; } = 0;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
 
-         public Guid DepartmentId { get; set; }
+        public Guid DepartmentId { get; set; }
         [ForeignKey("DepartmentId")]
         public Department? Department { get; set; }
+
         public Guid? ParentProjectId { get; set; }
         [ForeignKey("ParentProjectId")]
         public Project? ParentProject { get; set; }
+
         public ICollection<Project> SubProjects { get; set; } = new List<Project>();
 
-         public ICollection<ProjectBusinessUnit> ProjectBusinessUnits { get; set; } = new List<ProjectBusinessUnit>();
+        public ICollection<ProjectBusinessUnit> ProjectBusinessUnits { get; set; } = new List<ProjectBusinessUnit>();
         public ICollection<ProjectTechnology> ProjectTechnologies { get; set; } = new List<ProjectTechnology>();
         public ICollection<ProjectSolutionDomain> ProjectSolutionDomains { get; set; } = new List<ProjectSolutionDomain>();
-        public ICollection<ProjectMember> ProjectMembers { get; set; } = new List<ProjectMember>();
-        public ICollection<Sprint> Sprints { get; set; } = new List<Sprint>();
 
+        public ICollection<ProjectMember> ProjectMembers { get; set; } = new List<ProjectMember>();
+        public ICollection<InternAllocation> InternAllocations { get; set; } = new List<InternAllocation>();
 
         public ICollection<ProjectTask> Tasks { get; set; } = new List<ProjectTask>();
-         public ICollection<InternAllocation> InternAllocations { get; set; } = new List<InternAllocation>();
+        public ICollection<DeliverableBreakdown> Deliverables { get; set; } = new List<DeliverableBreakdown>();
+
         public ICollection<HourEntry> HourEntries { get; set; } = new List<HourEntry>();
         public ICollection<KPI> KPIs { get; set; } = new List<KPI>();
+
         public ICollection<ProjectFile> ProjectFiles { get; set; } = new List<ProjectFile>();
         public ICollection<ProjectResource> ProjectResources { get; set; } = new List<ProjectResource>();
+
         public ICollection<StrategicCriterion> StrategicCriteria { get; set; } = new List<StrategicCriterion>();
+
+        public ICollection<ProjectTimelineEntry> TimelineEntries { get; set; } = new List<ProjectTimelineEntry>();
+
+        public ICollection<ProjectRoadblock> RoadblockEntries { get; set; } = new List<ProjectRoadblock>();
     }
 }

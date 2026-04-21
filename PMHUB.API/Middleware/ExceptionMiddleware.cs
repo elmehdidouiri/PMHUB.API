@@ -1,5 +1,6 @@
-﻿   using PMHUB.Application.Exceptions;
- using System.Net;
+using PMHUB.API.Helpers;
+using PMHUB.Application.Exceptions;
+using System.Net;
 using System.Text.Json;
 using ValidationException = PMHUB.Application.Exceptions.ValidationException;
 
@@ -24,7 +25,7 @@ namespace PMHUB.API.Middleware
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Exception interceptée : {Message}", ex.Message);
+                _logger.LogError(ex, "Intercepted exception: {Message}", ex.Message);
                 await HandleExceptionAsync(context, ex);
             }
         }
@@ -37,31 +38,41 @@ namespace PMHUB.API.Middleware
             {
                 NotFoundException ex => (
                     StatusCode: (int)HttpStatusCode.NotFound,
-                    Body: ApiResponse.Fail(ex.Message)
+                    Body: ApiResponse.Fail(ErrorMessageTranslator.Translate(ex.Message))
                 ),
                 BadRequestException ex => (
                     StatusCode: (int)HttpStatusCode.BadRequest,
-                    Body: ApiResponse.Fail(ex.Message)
+                    Body: ApiResponse.Fail(ErrorMessageTranslator.Translate(ex.Message))
                 ),
                 ConflictException ex => (
                     StatusCode: (int)HttpStatusCode.Conflict,
-                    Body: ApiResponse.Fail(ex.Message)
+                    Body: ApiResponse.Fail(ErrorMessageTranslator.Translate(ex.Message))
                 ),
                 ForbiddenException ex => (
                     StatusCode: (int)HttpStatusCode.Forbidden,
-                    Body: ApiResponse.Fail(ex.Message)
+                    Body: ApiResponse.Fail(ErrorMessageTranslator.Translate(ex.Message))
                 ),
                 UnauthorizedException ex => (
                     StatusCode: (int)HttpStatusCode.Unauthorized,
-                    Body: ApiResponse.Fail(ex.Message)
+                    Body: ApiResponse.Fail(ErrorMessageTranslator.Translate(ex.Message))
                 ),
                 ValidationException ex => (
                     StatusCode: (int)HttpStatusCode.UnprocessableEntity,
-                    Body: ApiResponse.Fail(ex.Message, ex.Errors)
+                    Body: ApiResponse.Fail(
+                        ErrorMessageTranslator.BuildValidationSummary(ex.Errors, ErrorMessageTranslator.Translate(ex.Message)),
+                        ErrorMessageTranslator.Translate(ex.Errors))
+                ),
+                JsonException ex => (
+                    StatusCode: (int)HttpStatusCode.BadRequest,
+                    Body: ApiResponse.Fail("Invalid JSON format: " + ex.Message)
+                ),
+                BadHttpRequestException ex => (
+                    StatusCode: (int)HttpStatusCode.BadRequest,
+                    Body: ApiResponse.Fail("Malformed request: " + ex.Message)
                 ),
                 _ => (
                     StatusCode: (int)HttpStatusCode.InternalServerError,
-                    Body: ApiResponse.Fail("Une erreur interne du serveur s'est produite.")
+                    Body: ApiResponse.Fail("An unexpected error occurred: " + exception.Message)
                 )
             };
 

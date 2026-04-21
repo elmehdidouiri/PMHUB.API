@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
@@ -34,6 +34,8 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<RoleDto>>> GetById(Guid id)
         {
             var role = await _service.GetRoleByIdAsync(id);
+            if (role is null)
+                return NotFound(ApiResponse<RoleDto>.Fail("Role was not found."));
             return Ok(ApiResponse<RoleDto>.Ok(role));
         }
 
@@ -56,6 +58,8 @@ namespace PMHUB.API.Controllers
             Guid id, [FromBody] UpdateRoleDto dto)
         {
             var role = await _service.UpdateRoleAsync(id, dto);
+            if (role is null)
+                return NotFound(ApiResponse<RoleDto>.Fail("Role was not found."));
             return Ok(ApiResponse<RoleDto>.Ok(role, "Role mis à jour avec succès."));
         }
 

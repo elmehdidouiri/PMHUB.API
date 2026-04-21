@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -9,14 +9,14 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateProjectResourceDto
     {
-        [Required(ErrorMessage = "Le nom de la ressource est obligatoire.")]
-        [MaxLength(150)]
+        [Required(ErrorMessage = "Resource name is required.")]
+        [MaxLength(150, ErrorMessage = "Resource name cannot exceed 150 characters.")]
         public string ItemName { get; set; } = string.Empty;
 
-        [Range(0, double.MaxValue)]
+        [Range(0, double.MaxValue, ErrorMessage = "Price per unit must be a positive value.")]
         public decimal PricePerUnit { get; set; } = 0;
 
-        [Range(0, int.MaxValue)]
+        [Range(0, int.MaxValue, ErrorMessage = "Quantity must be a positive value.")]
         public int Quantity { get; set; } = 0;
 
         [MaxLength(100)]

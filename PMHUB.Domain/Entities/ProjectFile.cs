@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using PMHUB.Domain.Enums;
 
@@ -36,5 +36,7 @@ namespace PMHUB.Domain.Entities
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
+
+        public ICollection<ProjectFileVersion> Versions { get; set; } = new List<ProjectFileVersion>();
     }
 }

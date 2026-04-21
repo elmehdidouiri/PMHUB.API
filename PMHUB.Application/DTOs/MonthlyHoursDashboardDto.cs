@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace PMHUB.Application.DTOs
@@ -30,6 +30,7 @@ namespace PMHUB.Application.DTOs
         public decimal TotalRAndDHours { get; set; }
         public decimal TotalWorkshopHours { get; set; }
         public decimal TotalOtherHours { get; set; }
+        public decimal TotalInternManagementHours { get; set; }
 
         public List<HourEntrySummaryDto> Entries { get; set; } = new();
 

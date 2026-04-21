@@ -1,5 +1,6 @@
-﻿ using PMHUB.Domain.Enums;
+using PMHUB.Domain.Enums;
 using System;
+using System.Collections.Generic;
 
 namespace PMHUB.Application.DTOs
 {
@@ -25,6 +26,7 @@ namespace PMHUB.Application.DTOs
         public decimal RAndDHours { get; set; }
         public decimal WorkshopHours { get; set; }
         public decimal OtherHours { get; set; }
+        public decimal InternManagementHours { get; set; }
 
          public decimal TotalHours { get; set; }
 
@@ -37,7 +39,16 @@ namespace PMHUB.Application.DTOs
         public string? PremiumApprovalStatus { get; set; }
 
          public string? Notes { get; set; }
+        public List<DetailInternSupervisionDto> SupervisedInterns { get; set; } = new();
+
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class DetailInternSupervisionDto
+    {
+        public Guid InternId { get; set; }
+        public string InternName { get; set; } = string.Empty;
+        public decimal Hours { get; set; }
     }
 }

@@ -13,6 +13,11 @@ namespace PMHUB.Domain.Entities
         [Required, MaxLength(100)]
         public string Name { get; set; } = string.Empty;
 
+        [Required]
+        public Guid RoleId { get; set; }
+        [ForeignKey("RoleId")]
+        public Role Role { get; set; } = null!;
+
         public Guid SupervisorId { get; set; }
         [ForeignKey("SupervisorId")]
         public User Supervisor { get; set; } = null!;

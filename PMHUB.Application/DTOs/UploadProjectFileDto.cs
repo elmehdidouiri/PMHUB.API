@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using PMHUB.Domain.Enums;
 using System;
 using System.Collections.Generic;
@@ -11,10 +11,10 @@ namespace PMHUB.Application.DTOs
 {
     public class UploadProjectFileDto
     {
-        [Required(ErrorMessage = "Le fichier est obligatoire.")]
+        [Required(ErrorMessage = "File is required.")]
         public IFormFile File { get; set; } = null!;
 
-        [Required(ErrorMessage = "Le type de document est obligatoire.")]
+        [Required(ErrorMessage = "Document type is required.")]
         public ProjectFileType FileType { get; set; }
 
         [MaxLength(500)]

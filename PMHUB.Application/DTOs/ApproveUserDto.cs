@@ -1,4 +1,4 @@
-﻿ 
+ 
 using System.ComponentModel.DataAnnotations;
  
 
@@ -8,7 +8,7 @@ namespace PMHUB.Application.DTOs
     {
         public Guid UserId { get; set; }
 
-        [Required]
+        [Required(ErrorMessage = "Approval decision is required.")]
         public bool IsApproved { get; set; }
     }
 }

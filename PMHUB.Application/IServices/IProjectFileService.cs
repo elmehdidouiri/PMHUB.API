@@ -18,6 +18,8 @@ namespace PMHUB.Application.IServices
          Task<(byte[] Content, string ContentType, string FileName)> DownloadAsync(Guid id);
 
          Task<ProjectFileDto> UpdateAsync(Guid id, UpdateProjectFileDto dto);
+         Task<ProjectFileDto> UploadNewVersionAsync(Guid id, UploadProjectFileVersionDto dto);
+         Task<IEnumerable<ProjectFileVersionDto>> GetVersionsAsync(Guid id);
 
          Task DeleteAsync(Guid id);
         Task<IEnumerable<ProjectFileDto>> UploadBulkAsync(

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -8,14 +8,14 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateDepartmentDto
     {
-        [Required(ErrorMessage = "Le nom est obligatoire.")]
-        [MaxLength(100, ErrorMessage = "Le nom ne peut pas dépasser 100 caractères.")]
+        [Required(ErrorMessage = "Department name is required.")]
+        [MaxLength(100, ErrorMessage = "Department name cannot exceed 100 characters.")]
         public string Name { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Le BusinessUnit est obligatoire.")]
+        [Required(ErrorMessage = "Business Unit is required.")]
         public Guid BusinessUnitId { get; set; }
 
-        [Required(ErrorMessage = "Le Plant est obligatoire.")]
+        [Required(ErrorMessage = "Plant is required.")]
         public Guid PlantId { get; set; }
     }
 }

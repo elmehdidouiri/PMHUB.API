@@ -8,6 +8,7 @@ namespace PMHUB.Infrastructure.Repositories
         Task<User?> GetByEmailAsync(string email);
         Task<User?> GetByIdWithRoleAsync(Guid id);
         Task<IEnumerable<User>> GetAllWithRoleAsync();
+        Task<IEnumerable<NormalUser>> GetByRoleIdAsync(Guid roleId);
         Task<IEnumerable<NormalUser>> GetPendingUsersAsync();
         Task<NormalUser?> GetNormalUserByIdAsync(Guid id);
     }

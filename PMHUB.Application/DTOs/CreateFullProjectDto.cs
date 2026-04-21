@@ -1,32 +1,32 @@
-﻿using PMHUB.Application.DTOs;
+using PMHUB.Application.DTOs;
 using PMHUB.Domain.Enums;
 using System.ComponentModel.DataAnnotations;
 
 public class CreateFullProjectDto
 {
-    [Required(ErrorMessage = "Le nom est obligatoire.")]
+    [Required(ErrorMessage = "Project name is required.")]
     [StringLength(150)]
     public string Name { get; set; } = string.Empty;
 
     [StringLength(500)]
     public string? Description { get; set; }
 
-    [Required(ErrorMessage = "Le département est obligatoire.")]
-    public Guid DepartmentId { get; set; }
+    [Required(ErrorMessage = "Department is required.")]
+    public Guid? DepartmentId { get; set; }
 
-    [Required(ErrorMessage = "Le budget est obligatoire.")]
+    [Required(ErrorMessage = "Budget is required.")]
     [Range(0, double.MaxValue)]
-    public decimal Budget { get; set; }
+    public decimal? Budget { get; set; }
 
-    [Required(ErrorMessage = "La date de début est obligatoire.")]
-    public DateTime StartDate { get; set; }
+    [Required(ErrorMessage = "Start date is required.")]
+    public DateTime? StartDate { get; set; }
     public Guid? ProjectManagerId { get; set; }
 
     public DateTime? EndDate { get; set; }
     public DateTime? EstimatedDueDate { get; set; }
 
     public ProjectPhase Phase { get; set; } = ProjectPhase.Pipeline;
-    public ProjectStatus Status { get; set; } = ProjectStatus.Ongoing;
+    public ProjectStatus Status { get; set; } = ProjectStatus.Planned;
     public ProcessStatus ProcessStatus { get; set; } = ProcessStatus.NotStarted;
 
  
@@ -51,14 +51,14 @@ public class CreateFullProjectDto
     [MaxLength(150)]
     public string? ServerHostName { get; set; }
 
-    [Required(ErrorMessage = "Le type de projet est obligatoire.")]
-    public ProjectManagementType ProjectManagementType { get; set; }
+    [Required(ErrorMessage = "Project management type is required.")]
+    public ProjectManagementType? ProjectManagementType { get; set; }
+
+    [Required(ErrorMessage = "Project type is required.")]
+    public ProjectType? ProjectType { get; set; }
 
     [MaxLength(1000)]
     public string? CurrentState { get; set; }
-
-    [MaxLength(1000)]
-    public string? Roadblocks { get; set; }
 
     [MaxLength(1000)]
     public string? NextSteps { get; set; }
@@ -67,6 +67,7 @@ public class CreateFullProjectDto
     public string? Enhancements { get; set; }
 
     public decimal EstimatedHours { get; set; } = 0;
+    public decimal ActualHours { get; set; } = 0;
  
  
     public Guid? ParentProjectId { get; set; }

@@ -70,6 +70,22 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<ProjectFileDto>.Ok(file, "Fichier mis à jour avec succès."));
         }
 
+        [HttpGet("{id:guid}/versions")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectFileVersionDto>>>> GetVersions(Guid projectId, Guid id)
+        {
+            var versions = await _service.GetVersionsAsync(id);
+            return Ok(ApiResponse<IEnumerable<ProjectFileVersionDto>>.Ok(versions));
+        }
+
+        [HttpPost("{id:guid}/versions")]
+        [Consumes("multipart/form-data")]
+        public async Task<ActionResult<ApiResponse<ProjectFileDto>>> UploadNewVersion(
+            Guid projectId, Guid id, [FromForm] UploadProjectFileVersionDto dto)
+        {
+            var file = await _service.UploadNewVersionAsync(id, dto);
+            return Ok(ApiResponse<ProjectFileDto>.Ok(file, "Nouvelle version uploadée avec succès."));
+        }
+
         // DELETE api/projects/{projectId}/files/{id}
         [HttpDelete("{id:guid}")]
         public async Task<ActionResult<ApiResponse>> Delete(Guid projectId, Guid id)

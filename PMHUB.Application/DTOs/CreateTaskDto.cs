@@ -1,4 +1,4 @@
-﻿using PMHUB.Domain.Enums;
+using PMHUB.Domain.Enums;
 using System;
 using System.ComponentModel.DataAnnotations;
 
@@ -6,11 +6,11 @@ namespace PMHUB.Application.DTOs
 {
     public class CreateTaskDto
     {
-        [Required]
-        [StringLength(150)]
+        [Required(ErrorMessage = "Task name is required.")]
+        [StringLength(150, ErrorMessage = "Task name cannot exceed 150 characters.")]
         public string Name { get; set; } = string.Empty;
 
-        [StringLength(500)]
+        [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters.")]
         public string? Description { get; set; }
 
         public DateTime? StartDate { get; set; }

@@ -1,11 +1,13 @@
-using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
- using PMHUB.API.Middleware;
+using PMHUB.API.Helpers;
+using PMHUB.API.Middleware;
 using PMHUB.Application.DTOs;
+using PMHUB.Application.Exceptions;
 using PMHUB.Application.Interfaces;
 using PMHUB.Application.IServices;
 using PMHUB.Application.Services;
@@ -22,7 +24,7 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
- Log.Logger = new LoggerConfiguration()
+Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console()
     .WriteTo.File("Logs/pmhub-.log",
@@ -31,18 +33,36 @@ var builder = WebApplication.CreateBuilder(args);
     .CreateLogger();
 builder.Host.UseSerilog();
 
- builder.Services.AddControllers();
+builder.Services.AddControllers();
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(kvp => kvp.Value?.Errors.Count > 0)
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value!.Errors
+                    .Select(error => ErrorMessageTranslator.Translate(error.ErrorMessage))
+                    .ToArray());
+
+        return new BadRequestObjectResult(
+            ApiResponse.Fail(
+                ErrorMessageTranslator.BuildValidationSummary(errors, "Validation failed."),
+                errors));
+    };
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", builder =>
+    options.AddPolicy("AllowFrontend", corsBuilder =>
     {
-        builder.WithOrigins("http://localhost:4200")
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+        corsBuilder.WithOrigins("http://localhost:4200")
+            .AllowAnyMethod()
+            .AllowAnyHeader();
     });
 });
-
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -54,7 +74,7 @@ builder.Services.AddSwaggerGen(c =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Entrez: Bearer {votre token}"
+        Description = "Enter: Bearer {your token}"
     });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
@@ -64,7 +84,7 @@ builder.Services.AddSwaggerGen(c =>
                 Reference = new OpenApiReference
                 {
                     Type = ReferenceType.SecurityScheme,
-                    Id   = "Bearer"
+                    Id = "Bearer"
                 }
             },
             Array.Empty<string>()
@@ -72,15 +92,12 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
- 
 builder.Services.AddDbContext<PMHubDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
-        sql => sql.MigrationsAssembly("PMHUB.Infrastructure")
-    )
-);
+        sql => sql.MigrationsAssembly("PMHUB.Infrastructure")));
 
- var jwtSecret = builder.Configuration["JwtSettings:Secret"]
+var jwtSecret = builder.Configuration["JwtSettings:Secret"]
     ?? throw new ArgumentNullException("JwtSettings:Secret");
 
 builder.Services.AddAuthentication(options =>
@@ -98,12 +115,32 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
         ValidAudience = builder.Configuration["JwtSettings:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(
-                                       Encoding.UTF8.GetBytes(jwtSecret))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
+    };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnChallenge = async context =>
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/json";
+
+            var response = ApiResponse.Fail("Your session has expired or is invalid. Please sign in again.");
+            await context.Response.WriteAsJsonAsync(response);
+        },
+        OnForbidden = async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+
+            var response = ApiResponse.Fail("Access denied. Insufficient permissions.");
+            await context.Response.WriteAsJsonAsync(response);
+        }
     };
 });
 
- builder.Services.AddAuthorization(options =>
+builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireClaim("isAdmin", "true"));
@@ -111,16 +148,18 @@ builder.Services.AddAuthentication(options =>
     options.AddPolicy("ApprovedUser", policy =>
         policy.RequireAuthenticatedUser());
 });
- 
-builder.Services.AddHttpContextAccessor();
- builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
- builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IHourEntryRepository, HourEntryRepository>();
 builder.Services.AddScoped<IProjectFileRepository, ProjectFileRepository>();
+builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
+builder.Services.AddScoped<IInternAllocationRepository, InternAllocationRepository>();
 
- builder.Services.AddScoped<IRepository<UserHourlyRate>, Repository<UserHourlyRate>>();
+builder.Services.AddScoped<IRepository<UserHourlyRate>, Repository<UserHourlyRate>>();
 builder.Services.AddScoped<IRepository<Holiday>, Repository<Holiday>>();
 
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
@@ -128,6 +167,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IProjectFileService, ProjectFileService>();
+builder.Services.AddScoped<IInternService, InternService>();
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 builder.Services.AddScoped<IBusinessUnitService, BusinessUnitService>();
 builder.Services.AddScoped<IPlantService, PlantService>();
@@ -139,25 +179,24 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IHourEntryService, HourEntryService>();
 builder.Services.AddScoped<IHourSummaryService, HourSummaryService>();
 builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
-
-
-
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = 52428800;
 });
+
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 52428800;
 });
+
 builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("Email"));
-builder.Services.AddScoped<IEmailService, EmailService>();
 
 var app = builder.Build();
 
- app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<ExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -168,12 +207,11 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
- app.UseAuthentication();
-app.UseAuthorization();
 app.UseCors("AllowFrontend");
-
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 
-Log.Information("Application PMHUB démarrée");
+Log.Information("PMHUB application started");
 app.Run();

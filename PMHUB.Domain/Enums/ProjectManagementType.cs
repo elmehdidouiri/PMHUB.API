@@ -8,10 +8,10 @@ namespace PMHUB.Domain.Enums
 {
     public enum ProjectManagementType
     {
-        NewProject = 1,
-        NewPhase = 2,
-        Extension = 3,
-        Sustain = 4,
-        NewProcessProject = 5
+        ProjectWork_Digital,
+        ProjectWork_Process,
+        Holiday_Vacation,
+        Workshop_Training,
+        Other
     }
 }

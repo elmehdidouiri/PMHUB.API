@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -9,10 +9,10 @@ namespace PMHUB.Application.DTOs
 {
     public class ApprovePremiumDto
     {
-        [Required(ErrorMessage = "L'ID de l'entrée est requis")]
+        [Required(ErrorMessage = "Hour entry ID is required.")]
         public Guid HourEntryId { get; set; }
 
-        [Required(ErrorMessage = "La décision est requise")]
+        [Required(ErrorMessage = "Approval decision is required.")]
         public bool IsApproved { get; set; }
     }
 }

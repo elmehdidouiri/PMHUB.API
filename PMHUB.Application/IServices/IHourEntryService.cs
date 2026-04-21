@@ -1,4 +1,7 @@
-﻿using PMHUB.Application.DTOs;
+using PMHUB.Application.DTOs;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace PMHUB.Application.IServices
 {
@@ -20,5 +23,6 @@ namespace PMHUB.Application.IServices
         Task ApprovePremiumAsync(ApprovePremiumDto dto);
 
          Task<IEnumerable<ProjectSummaryDto>> GetMyProjectsAsync(Guid userId);
+         Task<IEnumerable<ProjectInternAllocationDto>> GetSupervisedInternsAsync(Guid userId);
     }
 }
