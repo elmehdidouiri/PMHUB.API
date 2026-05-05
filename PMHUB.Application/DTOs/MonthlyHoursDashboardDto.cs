@@ -32,7 +32,7 @@ namespace PMHUB.Application.DTOs
         public decimal TotalOtherHours { get; set; }
         public decimal TotalInternManagementHours { get; set; }
 
-        public List<HourEntrySummaryDto> Entries { get; set; } = new();
+        public List<HourEntryDto> Entries { get; set; } = new();
 
         public bool IsOnTrack => Variance >= 0;
         public string Status => Progress >= 100 ? "Objectif atteint" : Progress >= 80 ? "En bonne voie" : "En retard";

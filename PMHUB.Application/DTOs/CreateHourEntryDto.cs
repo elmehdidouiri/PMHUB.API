@@ -23,7 +23,7 @@ namespace PMHUB.Application.DTOs
         public DateTime? RangeEndDate { get; set; }
 
         // Core Activity
-        public ProjectManagementType Category { get; set; } // Digital, Process, Holiday, Workshop, Training, Other
+        public ProjectManagementType Category { get; set; } // DigitalOperation, DigitalSolution, Infrastructure, ProcessSimplification
         public Guid? ProjectId { get; set; } // Filtered by Category
 
         // Hours Breakdown

@@ -11,6 +11,7 @@ namespace PMHUB.Infrastructure.Repositories
         Task<Project?> GetByNameAsync(string name);
         Task<Project?> GetFullProjectByIdAsync(Guid id);
         Task<Project?> GetByIdWithIncludesAsync(Guid id);
+        Task<Project?> GetByIdForUpdateAsync(Guid id);
         Task<DeliverableTask?> GetDeliverableTaskWithIncludesAsync(Guid taskId);
         Task<IEnumerable<Project>> GetAllWithIncludesAsync();
         Task<IEnumerable<Project>> GetAllSummariesAsync();
@@ -18,8 +19,8 @@ namespace PMHUB.Infrastructure.Repositories
         Expression<Func<Project, bool>> predicate);
         Task<IEnumerable<Project>> FindWithIncludesAsync(
         Expression<Func<Project, bool>> predicate);
-        Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(
-    PaginationQueryDto query);
+        Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(ProjectSearchDto query);
+        Task<IEnumerable<Project>> GetFilteredAsync(ProjectSearchDto query);
     }
 
 }

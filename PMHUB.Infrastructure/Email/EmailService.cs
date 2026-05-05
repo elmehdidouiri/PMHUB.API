@@ -55,6 +55,22 @@ namespace PMHUB.Infrastructure.Services
             await SendEmailAsync(toEmail, subject, body);
         }
 
+        public async Task SendPasswordResetCodeAsync(
+            string toEmail,
+            string firstName,
+            string code,
+            int expiresInMinutes)
+        {
+            var subject = "PMHub password reset verification code";
+            var body = await LoadTemplateAsync(
+                "password-reset-code.html",
+                ("FirstName", firstName),
+                ("VerificationCode", code),
+                ("ExpiresInMinutes", expiresInMinutes.ToString()));
+
+            await SendEmailAsync(toEmail, subject, body);
+        }
+
         private async Task<string> LoadTemplateAsync(string fileName, params (string Key, string Value)[] values)
         {
             var templatePath = Path.Combine(_templatesFolder, fileName);

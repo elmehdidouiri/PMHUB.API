@@ -36,6 +36,40 @@ namespace PMHUB.Application.Services
             return result;
         }
 
+        public async Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(DashboardQueryDto query, Guid? requesterUserId = null)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetExtendedAdminDashboardAsync(query);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Extended dashboard admin generated in {DurationMs} ms | requester={Requester} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                requesterUserId,
+                query);
+
+            return result;
+        }
+
+        public async Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(DashboardQueryDto query, Guid? requesterUserId = null)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetAdminBiDashboardAsync(query);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Admin BI dashboard generated in {DurationMs} ms | requester={Requester} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                requesterUserId,
+                query);
+
+            return result;
+        }
+
         public async Task<DashboardOverviewDto> GetMyDashboardAsync(Guid userId, DashboardQueryDto query)
         {
             NormalizeQuery(query);
@@ -46,6 +80,23 @@ namespace PMHUB.Application.Services
 
             _logger.LogInformation(
                 "Dashboard user generated in {DurationMs} ms | userId={UserId} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                userId,
+                query);
+
+            return result;
+        }
+
+        public async Task<DashboardPersonalPerformanceDto> GetMyPerformanceDashboardAsync(Guid userId, DashboardQueryDto query)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetPersonalPerformanceDashboardAsync(userId, query);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Personal performance dashboard generated in {DurationMs} ms | userId={UserId} | filters={@Filters}",
                 sw.ElapsedMilliseconds,
                 userId,
                 query);

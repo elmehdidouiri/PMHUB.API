@@ -63,6 +63,9 @@ namespace PMHUB.Infrastructure.Persistence
         // ── Audit  
         public DbSet<AuditLog> AuditLogs { get; set; } = null!;
 
+        public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+        public DbSet<PasswordResetCode> PasswordResetCodes { get; set; } = null!;
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -77,6 +80,30 @@ namespace PMHUB.Infrastructure.Persistence
             builder.Entity<User>()
                 .HasIndex(u => u.Email)
                 .IsUnique();
+
+            builder.Entity<RefreshToken>()
+                .HasOne(rt => rt.User)
+                .WithMany()
+                .HasForeignKey(rt => rt.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<RefreshToken>()
+                .HasIndex(rt => rt.TokenHash)
+                .IsUnique();
+
+            builder.Entity<PasswordResetCode>()
+                .HasOne(prc => prc.User)
+                .WithMany()
+                .HasForeignKey(prc => prc.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<PasswordResetCode>()
+                .HasIndex(prc => prc.UserId);
+
+            builder.Entity<PasswordResetCode>()
+                .HasIndex(prc => prc.ResetTokenHash)
+                .IsUnique()
+                .HasFilter("[ResetTokenHash] IS NOT NULL");
 
             // ── Role  
             builder.Entity<Role>()

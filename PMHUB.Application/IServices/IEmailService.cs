@@ -11,5 +11,6 @@ namespace PMHUB.Application.IServices
     {
         Task SendApprovalEmailAsync(string toEmail, string firstName);
         Task SendRejectionEmailAsync(string toEmail, string firstName);
+        Task SendPasswordResetCodeAsync(string toEmail, string firstName, string code, int expiresInMinutes);
     }
 }

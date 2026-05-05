@@ -316,7 +316,10 @@ namespace PMHUB.Application.Services.Implementation
                 TotalWorkshopHours = totalWorkshopHours,
                 TotalOtherHours = totalOtherHours,
                 TotalInternManagementHours = totalInternManagementHours,
-                Entries = entriesList.ToSummaryDtoList().ToList()
+                Entries = entriesList
+                    .OrderByDescending(h => h.Date)
+                    .ToDtoList()
+                    .ToList()
             };
         }
 

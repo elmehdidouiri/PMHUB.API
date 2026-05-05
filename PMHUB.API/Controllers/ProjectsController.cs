@@ -56,7 +56,7 @@ namespace PMHUB.API.Controllers
 
         // Endpoint 2 : Les stats globales pour l'admin
         [HttpGet("stats/admin")]
-        [Authorize(Policy = "AdminOnly")] // Important : Restreint aux administrateurs
+        [Authorize(Policy = "AdminOnly")]  
         public async Task<ActionResult<ApiResponse<DashboardStatsDto>>> GetAdminStats()
         {
             var result = await _service.GetAdminDashboardStatsAsync();
@@ -66,10 +66,25 @@ namespace PMHUB.API.Controllers
         // GET api/projects/paged
         [HttpGet("paged")]
         public async Task<ActionResult<ApiResponse<PaginatedResultDto<ProjectSummaryDto>>>> GetPaged(
-            [FromQuery] PaginationQueryDto query)
+            [FromQuery] ProjectSearchDto query)
         {
             var result = await _service.GetPagedAsync(query);
             return Ok(ApiResponse<PaginatedResultDto<ProjectSummaryDto>>.Ok(result));
+        }
+
+        [HttpGet("export")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<IActionResult> ExportProjects(
+            [FromQuery] ProjectSearchDto query)
+        {
+            var relativePath = await _service.ExportProjectsAsync(query);
+            var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath.TrimStart('/'));
+
+            if (!System.IO.File.Exists(fullPath))
+                return NotFound(ApiResponse.Fail("Le fichier d'export n'a pas pu être généré."));
+
+            var fileBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Path.GetFileName(fullPath));
         }
 
         // GET api/projects/{id}
@@ -172,6 +187,13 @@ namespace PMHUB.API.Controllers
         {
             await _service.AddMemberAsync(id, dto.UserId, dto.RoleId);
             return Ok(ApiResponse.Ok("Membre ajouté au projet avec succès."));
+        }
+
+        [HttpGet("{id:guid}/members")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectMemberDto>>>> GetMembers(Guid id)
+        {
+            var result = await _service.GetMembersAsync(id);
+            return Ok(ApiResponse<IEnumerable<ProjectMemberDto>>.Ok(result));
         }
 
         // DELETE api/projects/{id}/members/{userId}

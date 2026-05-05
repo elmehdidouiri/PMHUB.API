@@ -26,6 +26,9 @@
         public List<DashboardLabelValueDto> ProjectsByPhase { get; set; } = new();
         public List<TopProjectByHoursDto> TopProjectsByHours { get; set; } = new();
         public List<UsersByRoleDto> UsersByRole { get; set; } = new();
+        public List<UsersByRoleDto> ProjectTeamMembersByRole { get; set; } = new();
+        public List<DashboardLabelValueDto> MonthlyHoursBreakdownByCategory { get; set; } = new();
+        public List<DashboardLabelValueDto> HoursByStage { get; set; } = new();
         public List<DashboardLabelValueDto> DeliveryMetrics { get; set; } = new();
     }
 

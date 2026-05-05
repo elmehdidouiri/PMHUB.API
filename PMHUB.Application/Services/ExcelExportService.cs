@@ -1,8 +1,9 @@
-﻿using ClosedXML.Excel;
+using ClosedXML.Excel;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.IServices;
 using System.Collections.Generic;
 using System.IO;
+using System;
 
 namespace PMHUB.Application.Services
 {
@@ -99,6 +100,50 @@ namespace PMHUB.Application.Services
 
             worksheet.Columns().AdjustToContents();
 
+            workbook.SaveAs(filePath);
+
+            return $"/exports/{fileName}";
+        }
+
+        public string GenerateProjectsExcel(IEnumerable<ProjectSummaryDto> data)
+        {
+            string folderPath = GetExportsFolder();
+            string fileName = $"Projects_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            string filePath = Path.Combine(folderPath, fileName);
+
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Projects");
+
+            var headers = new string[] { "Name", "Status", "Phase", "Type", "Start Date", "End Date", "Budget", "Department", "Plant", "Sponsor", "Est. Hours", "Act. Hours" };
+            for (int i = 0; i < headers.Length; i++)
+            {
+                worksheet.Cell(1, i + 1).Value = headers[i];
+            }
+
+            var headerRange = worksheet.Range(1, 1, 1, headers.Length);
+            headerRange.Style.Font.Bold = true;
+            headerRange.Style.Fill.BackgroundColor = XLColor.DarkBlue;
+            headerRange.Style.Font.FontColor = XLColor.White;
+
+            int row = 2;
+            foreach (var item in data)
+            {
+                worksheet.Cell(row, 1).Value = item.Name;
+                worksheet.Cell(row, 2).Value = item.Status;
+                worksheet.Cell(row, 3).Value = item.Phase;
+                worksheet.Cell(row, 4).Value = item.ProjectType;
+                worksheet.Cell(row, 5).Value = item.StartDate;
+                worksheet.Cell(row, 6).Value = item.EndDate;
+                worksheet.Cell(row, 7).Value = item.Budget;
+                worksheet.Cell(row, 8).Value = item.DepartmentName;
+                worksheet.Cell(row, 9).Value = item.PlantName;
+                worksheet.Cell(row, 10).Value = item.Sponsor;
+                worksheet.Cell(row, 11).Value = item.EstimatedHours;
+                worksheet.Cell(row, 12).Value = item.ActualHours;
+                row++;
+            }
+
+            worksheet.Columns().AdjustToContents();
             workbook.SaveAs(filePath);
 
             return $"/exports/{fileName}";

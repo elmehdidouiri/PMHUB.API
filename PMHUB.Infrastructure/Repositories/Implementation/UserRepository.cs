@@ -58,6 +58,19 @@ namespace PMHUB.Infrastructure.Repositories
         .OfType<NormalUser>()
         .Include(u => u.Role)
         .FirstOrDefaultAsync(u => u.Id == id);
+
+        public async Task<User?> GetByIdForAuthAsync(Guid id)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            if (user is NormalUser normalUser)
+            {
+                await _context.Entry(normalUser)
+                    .Reference(u => u.Role)
+                    .LoadAsync();
+            }
+
+            return user;
+        }
     }
 
 }

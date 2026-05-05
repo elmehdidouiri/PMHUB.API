@@ -18,6 +18,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(h => h.Project)
                 .Include(h => h.User)
+                .Include(h => h.InternSupervisions)
+                    .ThenInclude(s => s.InternAllocation)
+                        .ThenInclude(a => a.Intern)
                 .Where(predicate)
                 .ToListAsync();
         }
@@ -28,6 +31,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(h => h.Project)
                 .Include(h => h.User)
+                .Include(h => h.InternSupervisions)
+                    .ThenInclude(s => s.InternAllocation)
+                        .ThenInclude(a => a.Intern)
                 .FirstOrDefaultAsync(h => h.Id == id);
         }
  
@@ -37,6 +43,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(h => h.Project)
                 .Include(h => h.User)
+                .Include(h => h.InternSupervisions)
+                    .ThenInclude(s => s.InternAllocation)
+                        .ThenInclude(a => a.Intern)
                 .Where(h => h.Date.Year == year)
                 .ToListAsync();
         }
@@ -47,6 +56,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(h => h.Project)
                 .Include(h => h.User)
+                .Include(h => h.InternSupervisions)
+                    .ThenInclude(s => s.InternAllocation)
+                        .ThenInclude(a => a.Intern)
                 .Where(h => h.Date.Year == year && h.Date.Month == month)
                 .ToListAsync();
         }
@@ -57,6 +69,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(h => h.Project)
                 .Include(h => h.User)
+                .Include(h => h.InternSupervisions)
+                    .ThenInclude(s => s.InternAllocation)
+                        .ThenInclude(a => a.Intern)
                 .Where(h => h.UserId == userId)
                 .AsQueryable();
 
@@ -75,6 +90,9 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(h => h.Project)
                 .Include(h => h.User)
+                .Include(h => h.InternSupervisions)
+                    .ThenInclude(s => s.InternAllocation)
+                        .ThenInclude(a => a.Intern)
                 .Where(h => h.ProjectId == projectId)
                 .AsQueryable();
 

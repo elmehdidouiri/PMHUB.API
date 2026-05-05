@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
+using PMHUB.Shared.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Security.Claims;
@@ -128,12 +129,13 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpGet("dashboard/ytd")]
-        public async Task<IActionResult> GetYtdDashboard([FromQuery] int companyYear)
+        public async Task<IActionResult> GetYtdDashboard([FromQuery] int? companyYear)
         {
             var userId = GetAuthenticatedUserId();
-            _logger.LogInformation("Récupération du dashboard YTD pour User {UserId} — CompanyYear {Year}", userId, companyYear);
+            var resolvedCompanyYear = CompanyYearHelper.ResolveCompanyYear(companyYear);
+            _logger.LogInformation("Récupération du dashboard YTD pour User {UserId} — CompanyYear {Year}", userId, resolvedCompanyYear);
 
-            var result = await _hourEntryService.GetYtdDashboardAsync(userId, companyYear);
+            var result = await _hourEntryService.GetYtdDashboardAsync(userId, resolvedCompanyYear);
 
             _logger.LogInformation("Dashboard YTD généré pour User {UserId} — TotalHeures {YtdHours}", userId, result.YtdHours);
             return Ok(ApiResponse<YtdDashboardDto>.Ok(result));

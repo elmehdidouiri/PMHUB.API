@@ -71,6 +71,18 @@ namespace PMHUB.Infrastructure.Repositories
                  .Include(p => p.ParentProject)
                  ;
 
+        // Tracked query for UPDATE scenarios.
+        // Important: we intentionally do NOT include Department (or other heavy navigations)
+        // to avoid duplicate tracking conflicts when validating related entities separately.
+        private IQueryable<Project> WithUpdateIncludes() =>
+            _context.Projects
+                .AsSplitQuery()
+                .Include(p => p.ProjectBusinessUnits)
+                .Include(p => p.ProjectTechnologies)
+                .Include(p => p.ProjectSolutionDomains)
+                .Include(p => p.ProjectMembers)
+                .Include(p => p.StrategicCriteria);
+
         public async Task<Project?> GetByNameAsync(string name) =>
             await _context.Projects
                 .AsNoTracking()
@@ -106,6 +118,10 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == id);
 
+        public async Task<Project?> GetByIdForUpdateAsync(Guid id) =>
+            await WithUpdateIncludes()
+                .FirstOrDefaultAsync(p => p.Id == id);
+
         public async Task<DeliverableTask?> GetDeliverableTaskWithIncludesAsync(Guid taskId) =>
             await _context.DeliverableTasks
                 .Include(t => t.ProjectMember)
@@ -120,6 +136,11 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .ToListAsync();
 
+        public async Task<IEnumerable<Project>> GetAllWithIncludesAsync() =>
+            await WithIncludes()
+                .AsNoTracking()
+                .ToListAsync();
+
         public async Task<IEnumerable<Project>> FindSummariesAsync(
             Expression<Func<Project, bool>> predicate) =>
             await WithSummaryIncludes()
@@ -128,19 +149,64 @@ namespace PMHUB.Infrastructure.Repositories
                 .ToListAsync();
 
         public async Task<IEnumerable<Project>> FindWithIncludesAsync(
-    
-    public async Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(
-    PaginationQueryDto query)
+            Expression<Func<Project, bool>> predicate) =>
+            await WithIncludes()
+                .AsNoTracking()
+                .Where(predicate)
+                .ToListAsync();
+
+        public async Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(ProjectSearchDto query)
         {
             var queryable = WithSummaryIncludes().AsNoTracking();
 
-             if (!string.IsNullOrWhiteSpace(query.Search))
+            queryable = ApplyProjectFilters(queryable, query);
+
+            var totalCount = await queryable.CountAsync();
+
+            var items = await queryable
+               .Skip((query.PageNumber - 1) * query.PageSize)
+               .Take(query.PageSize)
+               .ToListAsync();
+
+            return (items, totalCount);
+        }
+
+        public async Task<IEnumerable<Project>> GetFilteredAsync(ProjectSearchDto query)
+        {
+            var queryable = WithSummaryIncludes().AsNoTracking();
+            queryable = ApplyProjectFilters(queryable, query);
+            return await queryable.ToListAsync();
+        }
+
+        private IQueryable<Project> ApplyProjectFilters(IQueryable<Project> queryable, ProjectSearchDto query)
+        {
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
                 queryable = queryable.Where(p =>
                     p.Name.Contains(query.Search) ||
                     (p.Description != null && p.Description.Contains(query.Search)) ||
                     (p.Sponsor != null && p.Sponsor.Contains(query.Search)));
+            }
 
-             queryable = query.SortBy?.ToLower() switch
+            if (query.Status.HasValue)
+                queryable = queryable.Where(p => p.Status == query.Status.Value);
+
+            if (query.Phase.HasValue)
+                queryable = queryable.Where(p => p.Phase == query.Phase.Value);
+
+            if (query.ProjectType.HasValue)
+                queryable = queryable.Where(p => p.ProjectType == query.ProjectType.Value);
+
+            if (query.DepartmentId.HasValue)
+                queryable = queryable.Where(p => p.DepartmentId == query.DepartmentId.Value);
+
+            if (query.BusinessUnitId.HasValue)
+                queryable = queryable.Where(p => p.ProjectBusinessUnits.Any(bu => bu.BusinessUnitId == query.BusinessUnitId.Value));
+
+            if (query.ProjectManagerId.HasValue)
+                queryable = queryable.Where(p => p.ProjectManagerId == query.ProjectManagerId.Value);
+
+            queryable = query.SortBy?.ToLower() switch
             {
                 "name" => query.SortDescending
                                 ? queryable.OrderByDescending(p => p.Name)
@@ -157,14 +223,7 @@ namespace PMHUB.Infrastructure.Repositories
                 _ => queryable.OrderByDescending(p => p.CreatedAt)
             };
 
-            var totalCount = await queryable.CountAsync();
-
-            var items = await queryable
-               .Skip((query.PageNumber - 1) * query.PageSize)
-               .Take(query.PageSize)
-               .ToListAsync();
-
-            return (items, totalCount);
+            return queryable;
         }
     } 
 }

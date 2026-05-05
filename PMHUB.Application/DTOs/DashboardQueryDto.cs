@@ -11,6 +11,12 @@ namespace PMHUB.Application.DTOs
         public string? ProjectPhase { get; set; }
         public string? ProcessStatus { get; set; }
         public Guid? DepartmentId { get; set; }
+        public Guid? BusinessUnitId { get; set; }
+        public Guid? PlantId { get; set; }
+        public Guid? ProjectManagerId { get; set; }
+        public string? ProjectType { get; set; }
+        public string? ProjectManagementType { get; set; }
+        public bool Ytd { get; set; }
         public int TopN { get; set; } = 5;
     }
 }

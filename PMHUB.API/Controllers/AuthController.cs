@@ -47,6 +47,56 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<AuthSuccessDto>.Ok(result));
         }
 
+        // POST api/auth/forgot-password
+        [AllowAnonymous]
+        [HttpPost("forgot-password")]
+        public async Task<ActionResult<ApiResponse<ForgotPasswordResponseDto>>> ForgotPassword([FromBody] ForgotPasswordRequestDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var result = await _authService.ForgotPasswordAsync(dto);
+            return Ok(ApiResponse<ForgotPasswordResponseDto>.Ok(result, result.Message));
+        }
+
+        // POST api/auth/verify-reset-code
+        [AllowAnonymous]
+        [HttpPost("verify-reset-code")]
+        public async Task<ActionResult<ApiResponse<VerifyPasswordResetCodeResponseDto>>> VerifyResetCode([FromBody] VerifyPasswordResetCodeDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var result = await _authService.VerifyPasswordResetCodeAsync(dto);
+            return Ok(ApiResponse<VerifyPasswordResetCodeResponseDto>.Ok(result, result.Message));
+        }
+
+        // POST api/auth/reset-password
+        [AllowAnonymous]
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            await _authService.ResetPasswordAsync(dto);
+            return Ok(ApiResponse.Ok("Your password has been updated. Please sign in with your new password."));
+        }
+
+        // POST api/auth/refresh
+        [AllowAnonymous]
+        [HttpPost("refresh")]
+        public async Task<ActionResult<ApiResponse<AuthSuccessDto>>> Refresh(
+            [FromBody] RefreshTokenRequestDto dto,
+            CancellationToken cancellationToken)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var result = await _authService.RefreshTokensAsync(dto, cancellationToken);
+            return Ok(ApiResponse<AuthSuccessDto>.Ok(result));
+        }
+
         // GET api/auth/pending 
         [HttpGet("pending")]
         [Authorize(Policy = "AdminOnly")]

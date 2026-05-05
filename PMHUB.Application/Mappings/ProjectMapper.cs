@@ -124,9 +124,10 @@ namespace PMHUB.Application.Mappings
         {
             Id = p.Id,
             Name = p.Name,
-            Status = p.Status,
-            Phase = p.Phase,
-            ProjectType = p.ProjectType,
+            Status = p.Status.ToString(),
+            Phase = p.Phase.ToString(),
+            ProjectManagementType = p.ProjectManagementType,
+            ProjectType = p.ProjectType.ToString(),
             StartDate = p.StartDate,
             EndDate = p.EndDate,
             Budget = p.Budget,

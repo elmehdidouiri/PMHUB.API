@@ -559,6 +559,53 @@ namespace PMHUB.Infrastructure.Migrations
                     b.ToTable("KPIs");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.PasswordResetCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("ConsumedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ResetTokenExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResetTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("VerifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ResetTokenHash")
+                        .IsUnique()
+                        .HasFilter("[ResetTokenHash] IS NOT NULL");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PasswordResetCodes");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.Plant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1065,6 +1112,39 @@ namespace PMHUB.Infrastructure.Migrations
                     b.ToTable("ProjectTimelineEntries");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.Report", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1545,6 +1625,17 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.PasswordResetCode", b =>
+                {
+                    b.HasOne("PMHUB.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.Project", b =>
                 {
                     b.HasOne("PMHUB.Domain.Entities.Department", "Department")
@@ -1744,6 +1835,17 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("SponsorUser");
+                });
+
+            modelBuilder.Entity("PMHUB.Domain.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("PMHUB.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("PMHUB.Domain.Entities.Report", b =>

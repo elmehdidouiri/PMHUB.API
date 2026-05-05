@@ -1,18 +1,18 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using PMHUB.API.Helpers;
 using PMHUB.API.Middleware;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
+using PMHUB.Application.IRepositories;
 using PMHUB.Application.Interfaces;
 using PMHUB.Application.IServices;
 using PMHUB.Application.Services;
 using PMHUB.Application.Services.Implementation;
 using PMHUB.Domain.Entities;
+using PMHUB.Infrastructure.Jwt;
 using PMHUB.Infrastructure.Persistence;
 using PMHUB.Infrastructure.Repositories;
 using PMHUB.Infrastructure.Repositories.Generique;
@@ -20,7 +20,6 @@ using PMHUB.Infrastructure.Repositories.Implementation;
 using PMHUB.Infrastructure.Services;
 using PMHUB.Infrastructure.Storage;
 using Serilog;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -97,48 +96,7 @@ builder.Services.AddDbContext<PMHubDbContext>(options =>
         builder.Configuration.GetConnectionString("DefaultConnection"),
         sql => sql.MigrationsAssembly("PMHUB.Infrastructure")));
 
-var jwtSecret = builder.Configuration["JwtSettings:Secret"]
-    ?? throw new ArgumentNullException("JwtSettings:Secret");
-
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
-        ValidAudience = builder.Configuration["JwtSettings:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
-    };
-
-    options.Events = new JwtBearerEvents
-    {
-        OnChallenge = async context =>
-        {
-            context.HandleResponse();
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            context.Response.ContentType = "application/json";
-
-            var response = ApiResponse.Fail("Your session has expired or is invalid. Please sign in again.");
-            await context.Response.WriteAsJsonAsync(response);
-        },
-        OnForbidden = async context =>
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            context.Response.ContentType = "application/json";
-
-            var response = ApiResponse.Fail("Access denied. Insufficient permissions.");
-            await context.Response.WriteAsJsonAsync(response);
-        }
-    };
-});
+builder.Services.AddPmHubJwtAuthentication(builder.Configuration);
 
 builder.Services.AddAuthorization(options =>
 {
@@ -194,7 +152,16 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("Email"));
 
+builder.Services.Configure<AuthSettings>(
+    builder.Configuration.GetSection("AuthSettings"));
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<PMHubDbContext>();
+    dbContext.Database.Migrate();
+}
 
 app.UseMiddleware<ExceptionMiddleware>();
 

@@ -16,6 +16,7 @@ namespace PMHUB.Application.IServices
 
 
          Task AddMemberAsync(Guid projectId, Guid userId, Guid roleId);
+        Task<IEnumerable<ProjectMemberDto>> GetMembersAsync(Guid projectId);
 
         Task<IEnumerable<ProjectSummaryDto>> GetByDepartmentAsync(Guid departmentId);
         Task<IEnumerable<ProjectSummaryDto>> GetByBusinessUnitAsync(Guid businessUnitId);
@@ -25,7 +26,8 @@ namespace PMHUB.Application.IServices
         Task<ProjectDto> AddSubProjectAsync(Guid parentId, CreateSubProjectDto dto);
         Task RemoveMemberAsync(Guid projectId, Guid userId);
         Task<ProjectDto> PatchAsync(Guid id, PatchProjectDto dto);
-        Task<PaginatedResultDto<ProjectSummaryDto>> GetPagedAsync(PaginationQueryDto query);
+        Task<PaginatedResultDto<ProjectSummaryDto>> GetPagedAsync(ProjectSearchDto query);
+        Task<string> ExportProjectsAsync(ProjectSearchDto query);
         Task<IEnumerable<ProjectExportDto>> GetForExportAsync(DateTime startDate, DateTime endDate);
         Task<IEnumerable<DeliverableBreakdownDto>> GetDeliverablesAsync(Guid projectId);
         Task<DeliverableBreakdownDto> AddDeliverableAsync(Guid projectId, CreateDeliverableBreakdownDto dto);

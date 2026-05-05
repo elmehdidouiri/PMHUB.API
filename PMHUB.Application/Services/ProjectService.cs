@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
@@ -29,6 +30,7 @@ namespace PMHUB.Application.Services
         private readonly ILogger<ProjectService> _logger;
 
         private readonly IRepository<Role> _roleRepository;
+        private readonly IExcelExportService _excelExportService;
 
         public ProjectService(
             IProjectRepository projectRepository,
@@ -46,6 +48,7 @@ namespace PMHUB.Application.Services
             IRepository<Intern> internRepository,
             IRepository<InternHourEntry> internHourEntryRepository,
             IRepository<Role> roleRepository, 
+            IExcelExportService excelExportService,
             ILogger<ProjectService> logger)
         {
             _projectRepository = projectRepository;
@@ -63,6 +66,7 @@ namespace PMHUB.Application.Services
             _internRepository = internRepository;
             _internHourEntryRepository = internHourEntryRepository;
             _roleRepository = roleRepository;
+            _excelExportService = excelExportService;
             _logger = logger;
 
 
@@ -123,22 +127,50 @@ namespace PMHUB.Application.Services
 
         private DashboardStatsDto CalculateDashboardStats(IEnumerable<Project> projects)
         {
+            var projectList = projects.ToList();
             var stats = new DashboardStatsDto
             {
-                TotalProjects = projects.Count(),
-                AverageEffectiveness = 0.0,  
-                AverageOtd = 0.0, 
-                DelayedProjects = projects.Count(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value < DateTime.UtcNow && p.Status != ProjectStatus.Done),
-                ProjectsByPhase = projects
+                TotalProjects = projectList.Count,
+                AverageEffectiveness = (double)CalculateAverageEffectiveness(projectList),
+                AverageOtd = (double)CalculateAverageOtd(projectList),
+                DelayedProjects = projectList.Count(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value.Date < DateTime.UtcNow.Date && p.Status != ProjectStatus.Done),
+                ProjectsByPhase = projectList
                     .GroupBy(p => p.Phase.ToString())
                     .ToDictionary(g => g.Key, g => g.Count())
             };
             return stats;
         }
 
+        private static decimal CalculateAverageEffectiveness(IEnumerable<Project> projects)
+        {
+            var projectList = projects.ToList();
+            if (!projectList.Any())
+            {
+                return 0m;
+            }
+
+            return Math.Round(projectList.Average(p => (decimal)p.ProgressPercentage), 2);
+        }
+
+        private static decimal CalculateAverageOtd(IEnumerable<Project> projects)
+        {
+            var now = DateTime.UtcNow.Date;
+            var datedProjects = projects.Where(p => p.EstimatedDueDate.HasValue).ToList();
+            if (!datedProjects.Any())
+            {
+                return 0m;
+            }
+
+            var onTimeProjects = datedProjects.Count(p =>
+                (p.Status == ProjectStatus.Done && p.EndDate.HasValue && p.EndDate.Value.Date <= p.EstimatedDueDate!.Value.Date) ||
+                (p.Status != ProjectStatus.Done && p.EstimatedDueDate!.Value.Date >= now));
+
+            return Math.Round(onTimeProjects * 100m / datedProjects.Count, 2);
+        }
+
         // ── GET PAGED ─────────────────────────────────────────
         public async Task<PaginatedResultDto<ProjectSummaryDto>> GetPagedAsync(
-            PaginationQueryDto query)
+            ProjectSearchDto query)
         {
             var (items, totalCount) = await _projectRepository.GetPagedAsync(query);
             return new PaginatedResultDto<ProjectSummaryDto>
@@ -148,6 +180,13 @@ namespace PMHUB.Application.Services
                 PageSize = query.PageSize,
                 TotalCount = totalCount
             };
+        }
+
+        public async Task<string> ExportProjectsAsync(ProjectSearchDto query)
+        {
+            var projects = await _projectRepository.GetFilteredAsync(query);
+            var dtos = projects.Select(ProjectMapper.ToSummaryDto);
+            return _excelExportService.GenerateProjectsExcel(dtos);
         }
 
         // ── GET BY ID ─────────────────────────────────────────
@@ -165,7 +204,7 @@ namespace PMHUB.Application.Services
         {
             _logger.LogInformation("Mise à jour du projet {ProjectId}", id);
 
-            var project = await _projectRepository.GetByIdWithIncludesAsync(id)
+            var project = await _projectRepository.GetByIdForUpdateAsync(id)
                 ?? throw new NotFoundException("Project", id);
 
             var department = await _departmentRepository.GetByIdAsync(dto.DepartmentId.Value)
@@ -214,68 +253,130 @@ namespace PMHUB.Application.Services
             project.EstimatedHours = dto.EstimatedHours;
             project.UpdatedAt = DateTime.UtcNow;
 
-            project.ProjectBusinessUnits.Clear();
-            foreach (var buId in dto.BusinessUnitIds)
+            var incomingBusinessUnitIds = dto.BusinessUnitIds.ToHashSet();
+            var businessUnitsToRemove = project.ProjectBusinessUnits
+                .Where(pbu => !incomingBusinessUnitIds.Contains(pbu.BusinessUnitId))
+                .ToList();
+            foreach (var item in businessUnitsToRemove)
+                project.ProjectBusinessUnits.Remove(item);
+            foreach (var buId in incomingBusinessUnitIds)
             {
                 await (_businessUnitRepository.GetByIdAsync(buId)
                     ?? throw new NotFoundException("BusinessUnit", buId));
-                project.ProjectBusinessUnits.Add(
-                    new ProjectBusinessUnit { BusinessUnitId = buId });
+                if (!project.ProjectBusinessUnits.Any(pbu => pbu.BusinessUnitId == buId))
+                {
+                    project.ProjectBusinessUnits.Add(new ProjectBusinessUnit { BusinessUnitId = buId });
+                }
             }
 
-            project.ProjectTechnologies.Clear();
-            foreach (var techId in dto.TechnologyIds)
+            var incomingTechnologyIds = dto.TechnologyIds.ToHashSet();
+            var technologiesToRemove = project.ProjectTechnologies
+                .Where(pt => !incomingTechnologyIds.Contains(pt.TechnologyId))
+                .ToList();
+            foreach (var item in technologiesToRemove)
+                project.ProjectTechnologies.Remove(item);
+            foreach (var techId in incomingTechnologyIds)
             {
                 await (_technologyRepository.GetByIdAsync(techId)
                     ?? throw new NotFoundException("Technology", techId));
-                project.ProjectTechnologies.Add(
-                    new ProjectTechnology { TechnologyId = techId });
+                if (!project.ProjectTechnologies.Any(pt => pt.TechnologyId == techId))
+                {
+                    project.ProjectTechnologies.Add(new ProjectTechnology { TechnologyId = techId });
+                }
             }
 
-            project.ProjectSolutionDomains.Clear();
-            foreach (var sdId in dto.SolutionDomainIds)
+            var incomingSolutionDomainIds = dto.SolutionDomainIds.ToHashSet();
+            var solutionDomainsToRemove = project.ProjectSolutionDomains
+                .Where(psd => !incomingSolutionDomainIds.Contains(psd.SolutionDomainId))
+                .ToList();
+            foreach (var item in solutionDomainsToRemove)
+                project.ProjectSolutionDomains.Remove(item);
+            foreach (var sdId in incomingSolutionDomainIds)
             {
                 await (_solutionDomainRepository.GetByIdAsync(sdId)
                     ?? throw new NotFoundException("SolutionDomain", sdId));
-                project.ProjectSolutionDomains.Add(
-                    new ProjectSolutionDomain { SolutionDomainId = sdId });
+                if (!project.ProjectSolutionDomains.Any(psd => psd.SolutionDomainId == sdId))
+                {
+                    project.ProjectSolutionDomains.Add(new ProjectSolutionDomain { SolutionDomainId = sdId });
+                }
             }
 
-            project.ProjectMembers.Clear();
-            foreach (var memberDto in dto.Members)
+            var incomingMembersByUser = dto.Members
+                .GroupBy(m => m.UserId)
+                .ToDictionary(g => g.Key, g => g.Last());
+
+            var membersToRemove = project.ProjectMembers
+                .Where(pm => !incomingMembersByUser.ContainsKey(pm.UserId))
+                .ToList();
+            foreach (var item in membersToRemove)
+                project.ProjectMembers.Remove(item);
+
+            foreach (var kvp in incomingMembersByUser)
             {
+                var memberDto = kvp.Value;
                 await (_userRepository.GetByIdAsync(memberDto.UserId)
                     ?? throw new NotFoundException("User", memberDto.UserId));
-
-                 await (_roleRepository.GetByIdAsync(memberDto.RoleId)
+                await (_roleRepository.GetByIdAsync(memberDto.RoleId)
                     ?? throw new NotFoundException("Role", memberDto.RoleId));
 
-                project.ProjectMembers.Add(new ProjectMember
+                var existingMember = project.ProjectMembers.FirstOrDefault(pm => pm.UserId == memberDto.UserId);
+                if (existingMember is null)
                 {
-                    UserId = memberDto.UserId,
-                    RoleId = memberDto.RoleId,
-                    JoinedAt = DateTime.UtcNow
-                });
+                    project.ProjectMembers.Add(new ProjectMember
+                    {
+                        UserId = memberDto.UserId,
+                        RoleId = memberDto.RoleId,
+                        JoinedAt = DateTime.UtcNow
+                    });
+                }
+                else if (existingMember.RoleId != memberDto.RoleId)
+                {
+                    existingMember.RoleId = memberDto.RoleId;
+                    existingMember.UpdatedAt = DateTime.UtcNow;
+                }
             }
 
-            project.StrategicCriteria.Clear();
-            foreach (var criterionDto in dto.StrategicCriteria)
+            var incomingCriteriaByType = dto.StrategicCriteria
+                .GroupBy(sc => sc.Type)
+                .ToDictionary(g => g.Key, g => g.Last());
+
+            var criteriaToRemove = project.StrategicCriteria
+                .Where(sc => !incomingCriteriaByType.ContainsKey(sc.Type))
+                .ToList();
+            foreach (var item in criteriaToRemove)
+                project.StrategicCriteria.Remove(item);
+
+            foreach (var kvp in incomingCriteriaByType)
             {
-                if (project.StrategicCriteria.Any(sc => sc.Type == criterionDto.Type))
-                    throw new BadRequestException(
-                        $"Le critère '{criterionDto.Type}' est déjà défini pour ce projet.");
-
-                project.StrategicCriteria.Add(new StrategicCriterion
+                var criterionDto = kvp.Value;
+                var existingCriterion = project.StrategicCriteria.FirstOrDefault(sc => sc.Type == criterionDto.Type);
+                if (existingCriterion is null)
                 {
-                    Type = criterionDto.Type,
-                    Score = criterionDto.Score,
-                    Comment = criterionDto.Comment,
-                    CreatedAt = DateTime.UtcNow
-                });
+                    project.StrategicCriteria.Add(new StrategicCriterion
+                    {
+                        Type = criterionDto.Type,
+                        Score = criterionDto.Score,
+                        Comment = criterionDto.Comment,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    existingCriterion.Score = criterionDto.Score;
+                    existingCriterion.Comment = criterionDto.Comment;
+                    existingCriterion.UpdatedAt = DateTime.UtcNow;
+                }
             }
 
-            _projectRepository.Update(project);
-            await _projectRepository.SaveChangesAsync();
+            try
+            {
+                await _projectRepository.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _logger.LogWarning(ex, "Concurrency conflict while updating project {ProjectId}", id);
+                throw new ConflictException("The project was modified or deleted by another operation. Refresh and retry.");
+            }
             _logger.LogInformation("Projet {ProjectId} mis à jour avec succès", id);
 
 
@@ -470,6 +571,27 @@ namespace PMHUB.Application.Services
 
             _projectRepository.Update(project);
             await _projectRepository.SaveChangesAsync();
+        }
+
+        public async Task<IEnumerable<ProjectMemberDto>> GetMembersAsync(Guid projectId)
+        {
+            var project = await _projectRepository.GetByIdWithIncludesAsync(projectId)
+                ?? throw new NotFoundException("Project", projectId);
+
+            return project.ProjectMembers
+                .OrderBy(pm => pm.User.FirstName)
+                .ThenBy(pm => pm.User.LastName)
+                .Select(pm => new ProjectMemberDto
+                {
+                    ProjectMemberId = pm.Id,
+                    UserId = pm.UserId,
+                    FullName = $"{pm.User?.FirstName} {pm.User?.LastName}".Trim(),
+                    Email = pm.User?.Email,
+                    RoleId = pm.RoleId,
+                    RoleName = pm.Role?.Name,
+                    JoinedAt = pm.JoinedAt
+                })
+                .ToList();
         }
 
         public async Task RemoveMemberAsync(Guid projectId, Guid userId)

@@ -1,5 +1,6 @@
 using PMHUB.API.Helpers;
 using PMHUB.Application.Exceptions;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Text.Json;
 using ValidationException = PMHUB.Application.Exceptions.ValidationException;
@@ -10,11 +11,13 @@ namespace PMHUB.API.Middleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<ExceptionMiddleware> _logger;
+        private readonly IWebHostEnvironment _env;
 
-        public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
+        public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger, IWebHostEnvironment env)
         {
             _next = next;
             _logger = logger;
+            _env = env;
         }
 
         public async Task InvokeAsync(HttpContext context)
@@ -70,9 +73,15 @@ namespace PMHUB.API.Middleware
                     StatusCode: (int)HttpStatusCode.BadRequest,
                     Body: ApiResponse.Fail("Malformed request: " + ex.Message)
                 ),
+                DbUpdateConcurrencyException => (
+                    StatusCode: (int)HttpStatusCode.Conflict,
+                    Body: ApiResponse.Fail("The resource was modified by another operation. Refresh and retry.")
+                ),
                 _ => (
                     StatusCode: (int)HttpStatusCode.InternalServerError,
-                    Body: ApiResponse.Fail("An unexpected error occurred: " + exception.Message)
+                    Body: ApiResponse.Fail(_env.IsDevelopment() 
+                        ? "An unexpected error occurred: " + exception.Message 
+                        : "An internal server error occurred. Please contact support.")
                 )
             };
 

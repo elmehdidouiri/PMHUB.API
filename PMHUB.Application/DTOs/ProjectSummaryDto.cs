@@ -11,12 +11,11 @@ namespace PMHUB.Application.DTOs
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public ProjectStatus Status { get; set; }
-        public string StatusLabel => Status.ToString();
-        public ProjectPhase Phase { get; set; }
-        public string PhaseLabel => Phase.ToString();
-        public ProjectType ProjectType { get; set; }
-        public string ProjectTypeLabel => ProjectType.ToString();
+        public string Status { get; set; } = string.Empty;
+        public string Phase { get; set; } = string.Empty;
+        public ProjectManagementType ProjectManagementType { get; set; }
+        public string ProjectManagementTypeLabel => ProjectManagementType.ToString();
+        public string ProjectType { get; set; } = string.Empty;
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public decimal Budget { get; set; }

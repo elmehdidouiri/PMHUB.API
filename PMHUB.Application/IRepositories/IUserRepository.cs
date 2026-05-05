@@ -11,5 +11,8 @@ namespace PMHUB.Infrastructure.Repositories
         Task<IEnumerable<NormalUser>> GetByRoleIdAsync(Guid roleId);
         Task<IEnumerable<NormalUser>> GetPendingUsersAsync();
         Task<NormalUser?> GetNormalUserByIdAsync(Guid id);
+
+        /// <summary>Loads user by id with role for NormalUser (auth / refresh flows).</summary>
+        Task<User?> GetByIdForAuthAsync(Guid id);
     }
 }

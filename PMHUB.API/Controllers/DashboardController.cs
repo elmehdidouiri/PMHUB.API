@@ -32,6 +32,32 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<DashboardOverviewDto>.Ok(result, message));
         }
 
+        [HttpGet("admin/extended")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardExtendedAdminDto>>> GetExtendedAdminDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var requesterId = TryGetAuthenticatedUserId();
+            var result = await _dashboardService.GetExtendedAdminDashboardAsync(query, requesterId);
+            var message = result.Summary.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardExtendedAdminDto>.Ok(result, message));
+        }
+
+        [HttpGet("admin/bi")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardAdminBiDto>>> GetAdminBiDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var requesterId = TryGetAuthenticatedUserId();
+            var result = await _dashboardService.GetAdminBiDashboardAsync(query, requesterId);
+            var message = result.Kpis.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardAdminBiDto>.Ok(result, message));
+        }
+
         [HttpGet("me")]
         public async Task<ActionResult<ApiResponse<DashboardOverviewDto>>> GetMyDashboard([FromQuery] DashboardQueryDto query)
         {
@@ -42,6 +68,18 @@ namespace PMHUB.API.Controllers
                 : null;
 
             return Ok(ApiResponse<DashboardOverviewDto>.Ok(result, message));
+        }
+
+        [HttpGet("me/performance")]
+        public async Task<ActionResult<ApiResponse<DashboardPersonalPerformanceDto>>> GetMyPerformanceDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var userId = GetAuthenticatedUserId();
+            var result = await _dashboardService.GetMyPerformanceDashboardAsync(userId, query);
+            var message = result.Summary.TotalLoggedHours == 0 && result.Summary.AssignedProjects == 0
+                ? "No personal performance data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardPersonalPerformanceDto>.Ok(result, message));
         }
 
         private Guid GetAuthenticatedUserId()

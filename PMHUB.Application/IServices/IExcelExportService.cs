@@ -1,4 +1,4 @@
-﻿using PMHUB.Application.DTOs;
+using PMHUB.Application.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,5 +12,6 @@ namespace PMHUB.Application.IServices
         string GenerateMonthlyExcel(IEnumerable<ProjectExportDto> data, int year, int month);
 
         string GenerateYearlyExcel(IEnumerable<ProjectExportDto> data, int companyYear);
+        string GenerateProjectsExcel(IEnumerable<ProjectSummaryDto> data);
     }
 }
