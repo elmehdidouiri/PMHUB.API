@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
@@ -120,6 +120,18 @@ namespace PMHUB.Application.Services
 
             _internRepository.Remove(intern);
             await _internRepository.SaveChangesAsync();
+        }
+
+        public async Task<IEnumerable<InternDto>> GetBySupervisorIdAsync(Guid supervisorId)
+        {
+            var interns = (await _internRepository.FindAsync(i => i.SupervisorId == supervisorId)).ToList();
+            var supervisor = await GetNormalUserAsync(supervisorId);
+            var roles = await LoadRolesAsync(interns.Select(i => i.RoleId).Distinct());
+
+            return interns
+                .OrderBy(i => i.Name)
+                .Select(i => InternEntityDtoMapper.ToDto(i, supervisor, roles.GetValueOrDefault(i.RoleId)))
+                .ToList();
         }
 
         private async Task<NormalUser> GetNormalUserAsync(Guid userId)

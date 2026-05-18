@@ -12,6 +12,11 @@ namespace PMHUB.Application.DTOs
     {
         public BookingType? BookingType { get; set; }
 
+        public CategoryWork? Category { get; set; }
+
+        [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
+        public decimal? TotalHours { get; set; }
+
         [Range(0, 24, ErrorMessage = "Hours must be between 0 and 24.")]
         public decimal ExecutionHours { get; set; }
 
@@ -35,5 +40,8 @@ namespace PMHUB.Application.DTOs
 
         [MaxLength(500, ErrorMessage = "Notes cannot exceed 500 characters.")]
         public string? Notes { get; set; }
+
+        [MaxLength(1000, ErrorMessage = "Activity note cannot exceed 1000 characters.")]
+        public string? ActivityNote { get; set; }
     }
 }

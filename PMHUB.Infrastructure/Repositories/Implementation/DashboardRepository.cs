@@ -3,16 +3,23 @@ using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
 using PMHUB.Domain.Enums;
 using PMHUB.Infrastructure.Persistence;
+using PMHUB.Shared.Helpers;
+using PMHUB.Shared.Models;
+using Microsoft.Extensions.Options;
 
 namespace PMHUB.Infrastructure.Repositories
 {
     public class DashboardRepository : IDashboardRepository
     {
-        private readonly PMHubDbContext _context;
+        private const decimal DefaultKpiTargetPercentage = 85m;
 
-        public DashboardRepository(PMHubDbContext context)
+        private readonly PMHubDbContext _context;
+        private readonly CompanyStandards _standards;
+
+        public DashboardRepository(PMHubDbContext context, IOptions<CompanyStandards> standards)
         {
             _context = context;
+            _standards = standards.Value;
         }
 
         public async Task<DashboardOverviewDto> GetDashboardOverviewAsync(DashboardQueryDto query, bool isAdminScope, Guid? userId = null)
@@ -25,7 +32,7 @@ namespace PMHUB.Infrastructure.Repositories
 
             var allHoursScopedQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => projectIdsQuery.Contains(h.ProjectId));
+                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value));
 
             var trackedHoursQuery = ApplyYearMonthFilter(allHoursScopedQuery, query.Year, query.Month);
             var ytdHoursQuery = ApplyYtdFilter(allHoursScopedQuery, query.Year, query.Month);
@@ -38,6 +45,14 @@ namespace PMHUB.Infrastructure.Repositories
                 p.EstimatedDueDate.HasValue &&
                 p.EstimatedDueDate.Value < now &&
                 p.Status != ProjectStatus.Done);
+            var doneProjectsBelowTarget = await projectsQuery.CountAsync(p =>
+                p.Status == ProjectStatus.Done &&
+                p.EstimatedHours > 0 &&
+                p.ActualHours < p.EstimatedHours);
+            var doneProjectsAboveTarget = await projectsQuery.CountAsync(p =>
+                p.Status == ProjectStatus.Done &&
+                p.EstimatedHours > 0 &&
+                p.ActualHours > p.EstimatedHours);
 
             var otdDenominator = await projectsQuery.CountAsync(p => p.EstimatedDueDate.HasValue);
             var otdNumerator = await projectsQuery.CountAsync(p =>
@@ -48,10 +63,21 @@ namespace PMHUB.Infrastructure.Repositories
                 ));
             var averageOtd = otdDenominator == 0 ? 0m : Math.Round((decimal)otdNumerator * 100m / otdDenominator, 2);
 
-            var avgEffectivenessRaw = await projectsQuery
-                .Select(p => (decimal?)p.ProgressPercentage)
-                .AverageAsync();
-            var averageEffectiveness = Math.Round(avgEffectivenessRaw ?? 0m, 2);
+            var effectivenessRows = await projectsQuery
+                .Select(p => new DashboardEffectivenessMetricRow
+                {
+                    ProgressPercentage = p.ProgressPercentage,
+                    CurrentValue = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.CurrentValue)
+                        .FirstOrDefault(),
+                    TargetValue = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.TargetValue)
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+            var averageEffectiveness = CalculateAverageEffectiveness(effectivenessRows);
 
             var projectsByStatusRaw = await projectsQuery
                 .GroupBy(p => p.Status)
@@ -85,7 +111,7 @@ namespace PMHUB.Infrastructure.Repositories
                 .GroupBy(h => new { h.ProjectId, h.Project.Name })
                 .Select(g => new TopProjectByHoursDto
                 {
-                    ProjectId = g.Key.ProjectId,
+                    ProjectId = g.Key.ProjectId!.Value,
                     ProjectName = g.Key.Name,
                     Value = g.Sum(x => x.TotalHours)
                 })
@@ -95,7 +121,8 @@ namespace PMHUB.Infrastructure.Repositories
 
             var projectTeamMembersByRole = await _context.ProjectMembers
                 .AsNoTracking()
-                .Where(pm => projectIdsQuery.Contains(pm.ProjectId))
+                .Where(pm => projectIdsQuery.Contains(pm.ProjectId) &&
+                    (!pm.Project.ProjectManagerId.HasValue || pm.UserId != pm.Project.ProjectManagerId.Value))
                 .GroupBy(pm => new { pm.RoleId, pm.Role.Name })
                 .Select(g => new UsersByRoleDto
                 {
@@ -185,6 +212,10 @@ namespace PMHUB.Infrastructure.Repositories
                 new() { Label = "Effectiveness", Value = averageEffectiveness }
             };
 
+            var annualGoalProgress = (activeUsers > 0 && _standards.AnnualHoursTarget > 0)
+                ? Math.Round(ytdHours * 100m / (_standards.AnnualHoursTarget * activeUsers), 2)
+                : 0m;
+
             return new DashboardOverviewDto
             {
                 Summary = new DashboardSummaryDto
@@ -196,9 +227,12 @@ namespace PMHUB.Infrastructure.Repositories
                     AverageOtd = averageOtd,
                     AverageEffectiveness = averageEffectiveness,
                     DelayedProjects = delayedProjects,
+                    DoneProjectsBelowTarget = doneProjectsBelowTarget,
+                    DoneProjectsAboveTarget = doneProjectsAboveTarget,
                     TotalUsers = totalUsers,
                     ActiveUsers = activeUsers,
-                    ApprovedUsers = approvedUsers
+                    ApprovedUsers = approvedUsers,
+                    AnnualGoalProgressPercentage = annualGoalProgress
                 },
                 Charts = new DashboardChartsDto
                 {
@@ -220,14 +254,14 @@ namespace PMHUB.Infrastructure.Repositories
             var now = DateTime.UtcNow.Date;
             var workloadYear = query.Year.HasValue && query.Year.Value > 0
                 ? query.Year.Value
-                : DateTime.UtcNow.Year;
+                : CompanyYearHelper.GetCurrentCompanyYear(now);
 
             var scopedProjectsQuery = BuildScopedProjectsQuery(query, isAdminScope: false, userId, applyProjectPeriodFilter: false);
             var scopedProjectIdsQuery = scopedProjectsQuery.Select(p => p.Id);
 
             var allPersonalHoursQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => h.UserId == userId && scopedProjectIdsQuery.Contains(h.ProjectId));
+                .Where(h => h.UserId == userId && h.ProjectId.HasValue && scopedProjectIdsQuery.Contains(h.ProjectId.Value));
 
             var trackedHoursQuery = ApplyYearMonthFilter(allPersonalHoursQuery, query.Year, query.Month);
             var ytdHoursQuery = ApplyYtdFilter(allPersonalHoursQuery, query.Year, query.Month);
@@ -366,7 +400,7 @@ namespace PMHUB.Infrastructure.Repositories
             var topProjects = topProjectRows
                 .Select(x => new DashboardPersonalProjectContributionDto
                 {
-                    ProjectId = x.ProjectId,
+                    ProjectId = x.ProjectId!.Value,
                     ProjectName = x.ProjectName,
                     Status = x.Status.ToString(),
                     Phase = x.Phase.ToString(),
@@ -385,6 +419,10 @@ namespace PMHUB.Infrastructure.Repositories
                 ? Math.Round(totalLoggedHours * 100m / expectedHours, 2)
                 : 0m;
 
+            var annualGoalProgress = _standards.AnnualHoursTarget > 0
+                ? Math.Round(ytdLoggedHours * 100m / _standards.AnnualHoursTarget, 2)
+                : 0m;
+
             return new DashboardPersonalPerformanceDto
             {
                 Summary = new DashboardPersonalPerformanceSummaryDto
@@ -400,7 +438,8 @@ namespace PMHUB.Infrastructure.Repositories
                     DelayedAssignedProjects = delayedAssignedProjects,
                     PremiumApprovedHours = premiumApprovedHours,
                     PremiumPendingHours = premiumPendingHours,
-                    TotalCost = totalCost
+                    TotalCost = totalCost,
+                    AnnualGoalProgressPercentage = annualGoalProgress
                 },
                 Charts = new DashboardPersonalPerformanceChartsDto
                 {
@@ -425,7 +464,7 @@ namespace PMHUB.Infrastructure.Repositories
             var now = DateTime.UtcNow.Date;
             var workloadYear = query.Year.HasValue && query.Year.Value > 0
                 ? query.Year.Value
-                : DateTime.UtcNow.Year;
+                : CompanyYearHelper.GetCurrentCompanyYear(now);
 
             var overview = await GetDashboardOverviewAsync(query, isAdminScope: true);
             var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
@@ -433,7 +472,7 @@ namespace PMHUB.Infrastructure.Repositories
 
             var allHoursScopedQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => projectIdsQuery.Contains(h.ProjectId));
+                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value));
 
             var trackedHoursQuery = ApplyYearMonthFilter(allHoursScopedQuery, query.Year, query.Month);
 
@@ -554,7 +593,7 @@ namespace PMHUB.Infrastructure.Repositories
             var topProjects = topProjectRows
                 .Select(x => new DashboardTopProjectDto
                 {
-                    ProjectId = x.ProjectId,
+                    ProjectId = x.ProjectId!.Value,
                     ProjectName = x.ProjectName,
                     Status = x.Status.ToString(),
                     Phase = x.Phase.ToString(),
@@ -589,6 +628,8 @@ namespace PMHUB.Infrastructure.Repositories
                     OnHoldProjects = onHoldProjects,
                     DoneProjects = doneProjects,
                     DelayedProjects = overview.Summary.DelayedProjects,
+                    DoneProjectsBelowTarget = overview.Summary.DoneProjectsBelowTarget,
+                    DoneProjectsAboveTarget = overview.Summary.DoneProjectsAboveTarget,
                     AverageProgress = Math.Round(averageProgress, 2),
                     AverageOtd = overview.Summary.AverageOtd,
                     AverageEffectiveness = overview.Summary.AverageEffectiveness,
@@ -645,7 +686,7 @@ namespace PMHUB.Infrastructure.Repositories
             var now = DateTime.UtcNow.Date;
             var year = query.Year.HasValue && query.Year.Value > 0
                 ? query.Year.Value
-                : DateTime.UtcNow.Year;
+                : CompanyYearHelper.GetCurrentCompanyYear();
 
             var extended = await GetExtendedAdminDashboardAsync(query);
             var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
@@ -653,7 +694,7 @@ namespace PMHUB.Infrastructure.Repositories
 
             var allHoursScopedQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => projectIdsQuery.Contains(h.ProjectId));
+                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value));
             var trackedHoursQuery = query.Ytd
                 ? ApplyYtdFilter(allHoursScopedQuery, query.Year, query.Month)
                 : ApplyYearMonthFilter(allHoursScopedQuery, query.Year, query.Month);
@@ -663,7 +704,7 @@ namespace PMHUB.Infrastructure.Repositories
             var previousProjectIdsQuery = previousProjectsQuery.Select(p => p.Id);
             var previousHoursQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => previousProjectIdsQuery.Contains(h.ProjectId));
+                .Where(h => h.ProjectId.HasValue && previousProjectIdsQuery.Contains(h.ProjectId.Value));
             previousHoursQuery = previousQuery.Ytd
                 ? ApplyYtdFilter(previousHoursQuery, previousQuery.Year, previousQuery.Month)
                 : ApplyYearMonthFilter(previousHoursQuery, previousQuery.Year, previousQuery.Month);
@@ -682,26 +723,33 @@ namespace PMHUB.Infrastructure.Repositories
                 ? Math.Round((extended.Summary.TotalTrackedHours - extended.Summary.TotalEstimatedHours) * 100m / extended.Summary.TotalEstimatedHours, 2)
                 : 0m;
 
+            var fiscalYearStart = CompanyYearHelper.GetCompanyYearStart(year);
+            var fiscalYearEnd = CompanyYearHelper.GetCompanyYearEnd(year);
+            var fiscalMonths = Enumerable.Range(0, 12)
+                .Select(offset => fiscalYearStart.AddMonths(offset))
+                .ToList();
+
             var monthlyWorkloadRows = await allHoursScopedQuery
-                .Where(h => h.Date.Year == year)
-                .GroupBy(h => h.Date.Month)
+                .Where(h => h.Date >= fiscalYearStart && h.Date <= fiscalYearEnd)
+                .GroupBy(h => new { h.Date.Year, h.Date.Month })
                 .Select(g => new
                 {
-                    Month = g.Key,
+                    Year = g.Key.Year,
+                    Month = g.Key.Month,
                     TotalHours = g.Sum(x => x.TotalHours),
                     Cost = g.Sum(x => x.TotalCost)
                 })
                 .ToListAsync();
 
-            var monthlyWorkloadTrend = Enumerable.Range(1, 12)
-                .Select(month =>
+            var monthlyWorkloadTrend = fiscalMonths
+                .Select(monthDate =>
                 {
-                    var row = monthlyWorkloadRows.FirstOrDefault(x => x.Month == month);
+                    var row = monthlyWorkloadRows.FirstOrDefault(x => x.Year == monthDate.Year && x.Month == monthDate.Month);
                     return new DashboardBiMonthlyTrendDto
                     {
-                        Year = year,
-                        Month = month,
-                        MonthName = new DateTime(year, month, 1).ToString("MMM"),
+                        Year = monthDate.Year,
+                        Month = monthDate.Month,
+                        MonthName = monthDate.ToString("MMM"),
                         TotalHours = row?.TotalHours ?? 0m,
                         EstimatedHours = extended.Summary.TotalEstimatedHours / 12m,
                         Cost = row?.Cost ?? 0m
@@ -710,11 +758,12 @@ namespace PMHUB.Infrastructure.Repositories
                 .ToList();
 
             var performanceRows = await projectsQuery
-                .Where(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value.Year == year)
-                .GroupBy(p => p.EstimatedDueDate!.Value.Month)
+                .Where(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value >= fiscalYearStart && p.EstimatedDueDate.Value <= fiscalYearEnd)
+                .GroupBy(p => new { p.EstimatedDueDate!.Value.Year, p.EstimatedDueDate!.Value.Month })
                 .Select(g => new
                 {
-                    Month = g.Key,
+                    Year = g.Key.Year,
+                    Month = g.Key.Month,
                     Count = g.Count(),
                     OtdCount = g.Count(p =>
                         (p.Status == ProjectStatus.Done && p.EndDate.HasValue && p.EndDate.Value <= p.EstimatedDueDate!.Value) ||
@@ -723,17 +772,17 @@ namespace PMHUB.Infrastructure.Repositories
                 })
                 .ToListAsync();
 
-            var performanceTrend = Enumerable.Range(1, 12)
-                .Select(month =>
+            var performanceTrend = fiscalMonths
+                .Select(monthDate =>
                 {
-                    var row = performanceRows.FirstOrDefault(x => x.Month == month);
+                    var row = performanceRows.FirstOrDefault(x => x.Year == monthDate.Year && x.Month == monthDate.Month);
                     return new DashboardBiPerformanceTrendDto
                     {
-                        Year = year,
-                        Month = month,
-                        MonthName = new DateTime(year, month, 1).ToString("MMM"),
+                        Year = monthDate.Year,
+                        Month = monthDate.Month,
+                        MonthName = monthDate.ToString("MMM"),
                         Otd = row is null || row.Count == 0 ? 0m : Math.Round(row.OtdCount * 100m / row.Count, 2),
-                        Effectiveness = Math.Round(row?.Effectiveness ?? 0m, 2)
+                        Effectiveness = CalculateTargetScore(row?.Effectiveness ?? 0m, DefaultKpiTargetPercentage)
                     };
                 })
                 .ToList();
@@ -1029,7 +1078,9 @@ namespace PMHUB.Infrastructure.Repositories
             var riskMatrix = riskRows
                 .Select(x =>
                 {
-                    var delayDays = x.EstimatedDueDate.HasValue && x.EstimatedDueDate.Value < now
+                    var delayDays = x.Status != ProjectStatus.Done &&
+                        x.EstimatedDueDate.HasValue &&
+                        x.EstimatedDueDate.Value < now
                         ? EFDateDiffDays(x.EstimatedDueDate.Value, now)
                         : 0m;
                     var remainingProgress = Math.Max(100m - x.ProgressPercentage, 0m);
@@ -1053,6 +1104,8 @@ namespace PMHUB.Infrastructure.Repositories
                 {
                     Year = query.Year,
                     Month = query.Month,
+                    StartDate = query.StartDate,
+                    EndDate = query.EndDate,
                     Ytd = query.Ytd,
                     ProjectStatus = query.ProjectStatus,
                     ProjectPhase = query.ProjectPhase,
@@ -1074,6 +1127,8 @@ namespace PMHUB.Infrastructure.Repositories
                     DelayRate = delayRate,
                     AverageOtd = extended.Summary.AverageOtd,
                     AverageEffectiveness = extended.Summary.AverageEffectiveness,
+                    DoneProjectsBelowTarget = extended.Summary.DoneProjectsBelowTarget,
+                    DoneProjectsAboveTarget = extended.Summary.DoneProjectsAboveTarget,
                     ActiveUsers = extended.Summary.ActiveUsers,
                     TrackedHoursVariancePercent = trackedHoursVariancePercent,
                     ProjectsKpiDelta = totalProjects - previousTotalProjects,
@@ -1117,6 +1172,261 @@ namespace PMHUB.Infrastructure.Repositories
                     OpenRoadblocks = openRoadblocks
                 },
                 Alerts = extended.Alerts
+            };
+        }
+
+        public async Task<DashboardGroupedDistributionDto> GetGroupedDistributionAsync(DashboardQueryDto query)
+        {
+            var now = DateTime.UtcNow.Date;
+            var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
+
+            var projectRows = await projectsQuery
+                .Select(p => new DashboardProjectDistributionRow
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Status = p.Status,
+                    Phase = p.Phase,
+                    ProjectManagementType = p.ProjectManagementType,
+                    ProjectType = p.ProjectType,
+                    StartDate = p.StartDate,
+                    EndDate = p.EndDate,
+                    EstimatedDueDate = p.EstimatedDueDate,
+                    ProgressPercentage = p.ProgressPercentage,
+                    Budget = p.Budget,
+                    DepartmentId = p.DepartmentId,
+                    DepartmentName = p.Department != null ? p.Department.Name : string.Empty,
+                    PlantId = p.Department != null ? p.Department.Plant.Id : null,
+                    PlantName = p.Department != null ? p.Department.Plant.Name : string.Empty,
+                    Sponsor = p.Sponsor ?? string.Empty,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours
+                })
+                .OrderBy(p => p.Name)
+                .ToListAsync();
+
+            var projectIds = projectRows.Select(p => p.Id).ToList();
+            var projectLookup = projectRows.ToDictionary(p => p.Id, ToProjectSummaryDto);
+
+            var businessUnitRows = await _context.ProjectBusinessUnits
+                .AsNoTracking()
+                .Where(pbu => projectIds.Contains(pbu.ProjectId))
+                .Select(pbu => new
+                {
+                    pbu.ProjectId,
+                    pbu.BusinessUnitId,
+                    BusinessUnitName = pbu.BusinessUnit.Name
+                })
+                .ToListAsync();
+
+            return new DashboardGroupedDistributionDto
+            {
+                ProjectManagement = BuildGroups(
+                    projectRows.Select(p => new DashboardProjectGroupItem(
+                        p.ProjectManagementType.ToString(),
+                        p.ProjectManagementType.ToString(),
+                        projectLookup[p.Id]))),
+                ProjectTypes = BuildGroups(
+                    projectRows.Select(p => new DashboardProjectGroupItem(
+                        p.ProjectType.ToString(),
+                        p.ProjectType.ToString(),
+                        projectLookup[p.Id]))),
+                Status = BuildGroups(
+                    projectRows.Select(p => new DashboardProjectGroupItem(
+                        p.Status.ToString(),
+                        p.Status.ToString(),
+                        projectLookup[p.Id]))),
+                Phases = BuildGroups(
+                    projectRows.Select(p => new DashboardProjectGroupItem(
+                        p.Phase.ToString(),
+                        p.Phase.ToString(),
+                        projectLookup[p.Id]))),
+                BusinessUnits = BuildGroups(
+                    businessUnitRows
+                        .Where(x => projectLookup.ContainsKey(x.ProjectId))
+                        .Select(x => new DashboardProjectGroupItem(
+                            x.BusinessUnitId.ToString(),
+                            x.BusinessUnitName,
+                            projectLookup[x.ProjectId]))),
+                Departments = BuildGroups(
+                    projectRows.Select(p => new DashboardProjectGroupItem(
+                        p.DepartmentId.ToString(),
+                        p.DepartmentName,
+                        projectLookup[p.Id]))),
+                Plants = BuildGroups(
+                    projectRows
+                        .Where(p => p.PlantId.HasValue)
+                        .Select(p => new DashboardProjectGroupItem(
+                            p.PlantId!.Value.ToString(),
+                            p.PlantName,
+                            projectLookup[p.Id])))
+            };
+
+            ProjectSummaryDto ToProjectSummaryDto(DashboardProjectDistributionRow p)
+            {
+                return new ProjectSummaryDto
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Status = p.Status.ToString(),
+                    Phase = p.Phase.ToString(),
+                    ProjectManagementType = p.ProjectManagementType,
+                    ProjectType = p.ProjectType.ToString(),
+                    StartDate = p.StartDate,
+                    EndDate = p.EndDate,
+                    ProgressPercentage = p.ProgressPercentage,
+                    IsDelayed = p.EstimatedDueDate.HasValue &&
+                        p.EstimatedDueDate.Value.Date < now &&
+                        p.Status != ProjectStatus.Done,
+                    Budget = p.Budget,
+                    DepartmentName = p.DepartmentName,
+                    PlantName = p.PlantName,
+                    Sponsor = p.Sponsor,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours
+                };
+            }
+        }
+
+        public async Task<DashboardGroupedDistributionCountsDto> GetGroupedDistributionCountsAsync(DashboardQueryDto query)
+        {
+            var now = DateTime.UtcNow.Date;
+            var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
+            var projectIdsQuery = projectsQuery.Select(p => p.Id);
+
+            var totalProjects = await projectsQuery.CountAsync();
+            var delayedProjects = await projectsQuery.CountAsync(p =>
+                p.EstimatedDueDate.HasValue &&
+                p.EstimatedDueDate.Value < now &&
+                p.Status != ProjectStatus.Done);
+            var doneProjectsBelowTarget = await projectsQuery.CountAsync(p =>
+                p.Status == ProjectStatus.Done &&
+                p.EstimatedHours > 0 &&
+                p.ActualHours < p.EstimatedHours);
+            var doneProjectsAboveTarget = await projectsQuery.CountAsync(p =>
+                p.Status == ProjectStatus.Done &&
+                p.EstimatedHours > 0 &&
+                p.ActualHours > p.EstimatedHours);
+
+            var otdDenominator = await projectsQuery.CountAsync(p => p.EstimatedDueDate.HasValue);
+            var otdNumerator = await projectsQuery.CountAsync(p =>
+                p.EstimatedDueDate.HasValue &&
+                (
+                    (p.Status == ProjectStatus.Done && p.EndDate.HasValue && p.EndDate.Value <= p.EstimatedDueDate.Value) ||
+                    (p.Status != ProjectStatus.Done && p.EstimatedDueDate.Value >= now)
+                ));
+            var averageOtd = otdDenominator == 0 ? 0m : Math.Round((decimal)otdNumerator * 100m / otdDenominator, 2);
+
+            var effectivenessRows = await projectsQuery
+                .Select(p => new DashboardEffectivenessMetricRow
+                {
+                    ProgressPercentage = p.ProgressPercentage,
+                    CurrentValue = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.CurrentValue)
+                        .FirstOrDefault(),
+                    TargetValue = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.TargetValue)
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+            var averageEffectiveness = CalculateAverageEffectiveness(effectivenessRows);
+
+            var projectManagementRows = await projectsQuery
+                .GroupBy(p => p.ProjectManagementType)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var projectTypeRows = await projectsQuery
+                .GroupBy(p => p.ProjectType)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var statusRows = await projectsQuery
+                .GroupBy(p => p.Status)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var phaseRows = await projectsQuery
+                .GroupBy(p => p.Phase)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var businessUnitRows = await _context.ProjectBusinessUnits
+                .AsNoTracking()
+                .Where(pbu => projectIdsQuery.Contains(pbu.ProjectId))
+                .GroupBy(pbu => new { pbu.BusinessUnitId, pbu.BusinessUnit.Name })
+                .Select(g => new
+                {
+                    Id = g.Key.BusinessUnitId,
+                    Label = g.Key.Name,
+                    Count = g.Select(x => x.ProjectId).Distinct().Count()
+                })
+                .ToListAsync();
+
+            var allBusinessUnits = await _context.BusinessUnits
+                .AsNoTracking()
+                .Select(bu => new { bu.Id, Label = bu.Name })
+                .ToListAsync();
+
+            var departmentRows = await projectsQuery
+                .GroupBy(p => new { p.DepartmentId, p.Department!.Name })
+                .Select(g => new
+                {
+                    Id = g.Key.DepartmentId,
+                    Label = g.Key.Name,
+                    Count = g.Count()
+                })
+                .ToListAsync();
+
+            var allDepartments = await _context.Departments
+                .AsNoTracking()
+                .Select(d => new { d.Id, Label = d.Name })
+                .ToListAsync();
+
+            var plantRows = await projectsQuery
+                .Where(p => p.Department != null && p.Department.Plant != null)
+                .GroupBy(p => new { p.Department!.Plant.Id, p.Department.Plant.Name })
+                .Select(g => new
+                {
+                    Id = g.Key.Id,
+                    Label = g.Key.Name,
+                    Count = g.Count()
+                })
+                .ToListAsync();
+
+            var allPlants = await _context.Plants
+                .AsNoTracking()
+                .Select(p => new { p.Id, Label = p.Name })
+                .ToListAsync();
+
+            var projectManagementCounts = projectManagementRows.ToDictionary(x => x.Id, x => x.Count);
+            var projectTypeCounts = projectTypeRows.ToDictionary(x => x.Id, x => x.Count);
+            var statusCounts = statusRows.ToDictionary(x => x.Id, x => x.Count);
+            var phaseCounts = phaseRows.ToDictionary(x => x.Id, x => x.Count);
+            var businessUnitCounts = businessUnitRows.ToDictionary(x => x.Id, x => x.Count);
+            var departmentCounts = departmentRows.ToDictionary(x => x.Id, x => x.Count);
+            var plantCounts = plantRows.ToDictionary(x => x.Id, x => x.Count);
+
+            return new DashboardGroupedDistributionCountsDto
+            {
+                Summary = new DashboardGroupedDistributionSummaryDto
+                {
+                    TotalProjects = totalProjects,
+                    AverageOtd = averageOtd,
+                    AverageEffectiveness = averageEffectiveness,
+                    DelayedProjects = delayedProjects,
+                    DoneProjectsAboveTarget = doneProjectsAboveTarget,
+                    DoneProjectsBelowTarget = doneProjectsBelowTarget
+                },
+                ProjectManagement = BuildEnumCountGroups(projectManagementCounts, includeOther: true),
+                ProjectTypes = BuildEnumCountGroups(projectTypeCounts),
+                Status = BuildEnumCountGroups(statusCounts),
+                Phases = BuildEnumCountGroups(phaseCounts),
+                BusinessUnits = BuildReferenceCountGroups(allBusinessUnits, businessUnitCounts, x => x.Id, x => x.Label),
+                Departments = BuildReferenceCountGroups(allDepartments, departmentCounts, x => x.Id, x => x.Label),
+                Plants = BuildReferenceCountGroups(allPlants, plantCounts, x => x.Id, x => x.Label)
             };
         }
 
@@ -1167,19 +1477,170 @@ namespace PMHUB.Infrastructure.Repositories
                 projectsQuery = projectsQuery.Where(p => p.ProjectType == projectType);
 
             if (TryParseProjectManagementType(query.ProjectManagementType, out var projectManagementType))
-                projectsQuery = projectsQuery.Where(p => p.ProjectManagementType == projectManagementType);
+                projectsQuery = projectsQuery.Where((System.Linq.Expressions.Expression<Func<Project, bool>>)(p => p.ProjectManagementType == projectManagementType));
 
-            var (periodStart, periodEnd) = ResolvePeriod(query.Year, query.Month);
+            var (periodStart, periodEnd) = ResolveProjectPeriod(query);
             if (applyProjectPeriodFilter && periodStart.HasValue && periodEnd.HasValue)
             {
                 var start = periodStart.Value;
                 var end = periodEnd.Value;
-
-                // Strict date filter by project start date.
                 projectsQuery = projectsQuery.Where(p => p.StartDate >= start && p.StartDate <= end);
             }
 
             return projectsQuery;
+        }
+
+        private static List<DashboardProjectGroupDto> BuildGroups(IEnumerable<DashboardProjectGroupItem> items)
+        {
+            return items
+                .Where(x => !string.IsNullOrWhiteSpace(x.Id))
+                .GroupBy(x => new { x.Id, x.Label })
+                .Select(g => new DashboardProjectGroupDto
+                {
+                    Id = g.Key.Id,
+                    Label = string.IsNullOrWhiteSpace(g.Key.Label) ? "Unassigned" : g.Key.Label,
+                    Count = g.Select(x => x.Project.Id).Distinct().Count(),
+                    Projects = g
+                        .Select(x => x.Project)
+                        .GroupBy(p => p.Id)
+                        .Select(gp => gp.First())
+                        .OrderBy(p => p.Name)
+                        .ToList()
+                })
+                .OrderBy(x => x.Label)
+                .ToList();
+        }
+
+        private static List<DashboardProjectCountGroupDto> ToCountGroups(IEnumerable<DashboardProjectGroupDto> groups)
+        {
+            return groups
+                .Select(g => new DashboardProjectCountGroupDto
+                {
+                    Id = g.Id,
+                    Label = g.Label,
+                    Count = g.Count
+                })
+                .ToList();
+        }
+
+        private static List<DashboardProjectCountGroupDto> BuildEnumCountGroups<TEnum>(
+            IReadOnlyDictionary<TEnum, int> counts,
+            bool includeOther = false)
+            where TEnum : struct, Enum
+        {
+            var groups = Enum.GetValues<TEnum>()
+                .Select(value => new DashboardProjectCountGroupDto
+                {
+                    Id = value.ToString(),
+                    Label = value.ToString(),
+                    Count = counts.TryGetValue(value, out var count) ? count : 0
+                })
+                .ToList();
+
+            if (includeOther)
+            {
+                groups.Add(new DashboardProjectCountGroupDto
+                {
+                    Id = "Other",
+                    Label = "Other",
+                    Count = 0
+                });
+            }
+
+            return groups;
+        }
+
+        private static List<DashboardProjectCountGroupDto> BuildReferenceCountGroups<TOption>(
+            IEnumerable<TOption> options,
+            IReadOnlyDictionary<Guid, int> counts,
+            Func<TOption, Guid> idSelector,
+            Func<TOption, string> labelSelector)
+        {
+            return options
+                .Select(option =>
+                {
+                    var id = idSelector(option);
+                    var label = labelSelector(option);
+
+                    return new DashboardProjectCountGroupDto
+                    {
+                        Id = id.ToString(),
+                        Label = string.IsNullOrWhiteSpace(label) ? "Unassigned" : label,
+                        Count = counts.TryGetValue(id, out var count) ? count : 0
+                    };
+                })
+                .OrderBy(x => x.Label)
+                .ToList();
+        }
+
+        private static decimal CalculateAverageEffectiveness(IEnumerable<DashboardEffectivenessMetricRow> rows)
+        {
+            var scores = rows
+                .Select(row =>
+                {
+                    var rawValue = row.CurrentValue.GetValueOrDefault() > 0
+                        ? row.CurrentValue!.Value
+                        : row.ProgressPercentage;
+                    var target = row.TargetValue.GetValueOrDefault() > 0
+                        ? row.TargetValue!.Value
+                        : DefaultKpiTargetPercentage;
+
+                    return CalculateTargetScore(rawValue, target);
+                })
+                .ToList();
+
+            return scores.Count == 0 ? 0m : Math.Round(scores.Average(), 2);
+        }
+
+        private static decimal CalculateTargetScore(decimal rawValue, decimal target)
+        {
+            if (rawValue <= 0)
+                return 0m;
+
+            if (target <= 0)
+                return NormalizePercentage(rawValue);
+
+            return NormalizePercentage(rawValue * 100m / target);
+        }
+
+        private static decimal NormalizePercentage(decimal value)
+        {
+            if (value <= 0)
+                return 0m;
+
+            var normalized = value <= 1m ? value * 100m : value;
+            return Math.Round(Math.Min(normalized, 100m), 2);
+        }
+
+        private sealed record DashboardProjectGroupItem(string Id, string Label, ProjectSummaryDto Project);
+
+        private sealed class DashboardEffectivenessMetricRow
+        {
+            public int ProgressPercentage { get; set; }
+            public decimal? CurrentValue { get; set; }
+            public decimal? TargetValue { get; set; }
+        }
+
+        private sealed class DashboardProjectDistributionRow
+        {
+            public Guid Id { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public ProjectStatus Status { get; set; }
+            public ProjectPhase Phase { get; set; }
+            public Category ProjectManagementType { get; set; }
+            public ProjectType ProjectType { get; set; }
+            public DateTime StartDate { get; set; }
+            public DateTime? EndDate { get; set; }
+            public DateTime? EstimatedDueDate { get; set; }
+            public int ProgressPercentage { get; set; }
+            public decimal Budget { get; set; }
+            public Guid DepartmentId { get; set; }
+            public string DepartmentName { get; set; } = string.Empty;
+            public Guid? PlantId { get; set; }
+            public string PlantName { get; set; } = string.Empty;
+            public string Sponsor { get; set; } = string.Empty;
+            public decimal EstimatedHours { get; set; }
+            public decimal ActualHours { get; set; }
         }
 
         private IQueryable<NormalUser> BuildScopedUsersQuery(DashboardQueryDto query, bool isAdminScope, IQueryable<Guid> projectIdsQuery)
@@ -1215,14 +1676,24 @@ namespace PMHUB.Infrastructure.Repositories
             if (month.HasValue && (month.Value < 1 || month.Value > 12))
                 month = null;
 
-            if (month.HasValue && !year.HasValue)
-                year = DateTime.UtcNow.Year;
-
             if (year.HasValue && year.Value > 0)
-                query = query.Where(h => h.Date.Year == year.Value);
-
-            if (month.HasValue)
+            {
+                if (month.HasValue)
+                {
+                    var calendarYear = month.Value >= 10 ? year.Value - 1 : year.Value;
+                    query = query.Where(h => h.Date.Year == calendarYear && h.Date.Month == month.Value);
+                }
+                else
+                {
+                    var start = CompanyYearHelper.GetCompanyYearStart(year.Value);
+                    var end = CompanyYearHelper.GetCompanyYearEnd(year.Value);
+                    query = query.Where(h => h.Date >= start && h.Date <= end);
+                }
+            }
+            else if (month.HasValue)
+            {
                 query = query.Where(h => h.Date.Month == month.Value);
+            }
 
             return query;
         }
@@ -1232,11 +1703,23 @@ namespace PMHUB.Infrastructure.Repositories
             if (month.HasValue && (month.Value < 1 || month.Value > 12))
                 month = null;
 
-            var ytdYear = year.HasValue && year.Value > 0 ? year.Value : DateTime.UtcNow.Year;
-            query = query.Where(h => h.Date.Year == ytdYear);
-
+            var fy = year.HasValue && year.Value > 0 ? year.Value : CompanyYearHelper.GetCurrentCompanyYear();
+            var start = CompanyYearHelper.GetCompanyYearStart(fy);
+            
+            DateTime end;
             if (month.HasValue)
-                query = query.Where(h => h.Date.Month <= month.Value);
+            {
+                var calendarYear = month.Value >= 10 ? fy - 1 : fy;
+                end = new DateTime(calendarYear, month.Value, DateTime.DaysInMonth(calendarYear, month.Value), 23, 59, 59);
+            }
+            else
+            {
+                end = DateTime.UtcNow;
+                var fyEnd = CompanyYearHelper.GetCompanyYearEnd(fy);
+                if (end > fyEnd) end = fyEnd;
+            }
+
+            query = query.Where(h => h.Date >= start && h.Date <= end);
 
             return query;
         }
@@ -1249,30 +1732,51 @@ namespace PMHUB.Infrastructure.Repositories
             if (!year.HasValue && !month.HasValue)
                 return (null, null);
 
-            var effectiveYear = year.HasValue && year.Value > 0 ? year.Value : DateTime.UtcNow.Year;
+            var fy = year.HasValue && year.Value > 0 ? year.Value : CompanyYearHelper.GetCurrentCompanyYear();
 
             if (month.HasValue)
             {
-                var start = new DateTime(effectiveYear, month.Value, 1);
+                var calendarYear = month.Value >= 10 ? fy - 1 : fy;
+                var start = new DateTime(calendarYear, month.Value, 1);
                 var end = start.AddMonths(1).AddTicks(-1);
                 return (start, end);
             }
 
-            return (new DateTime(effectiveYear, 1, 1), new DateTime(effectiveYear, 12, 31, 23, 59, 59, 999));
+            return (CompanyYearHelper.GetCompanyYearStart(fy), CompanyYearHelper.GetCompanyYearEnd(fy));
         }
 
-        private static decimal ResolveExpectedHours(DashboardQueryDto query, int workloadYear)
+        private static (DateTime? Start, DateTime? End) ResolveProjectPeriod(DashboardQueryDto query)
         {
-            if (query.Month.HasValue && query.Month.Value >= 1 && query.Month.Value <= 12)
-                return HourEntry.ExpectedMonthlyHours;
+            if (query.StartDate.HasValue || query.EndDate.HasValue)
+            {
+                var start = query.StartDate?.Date ?? DateTime.MinValue;
+                var end = query.EndDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.MaxValue;
 
-            var currentYear = DateTime.UtcNow.Year;
-            var currentMonth = DateTime.UtcNow.Month;
-            var months = query.Ytd && workloadYear == currentYear
-                ? currentMonth
+                return start <= end
+                    ? (start, end)
+                    : (end.Date, start.Date.AddDays(1).AddTicks(-1));
+            }
+
+            return ResolvePeriod(query.Year, query.Month);
+        }
+
+        private decimal ResolveExpectedHours(DashboardQueryDto query, int workloadYear)
+        {
+            var monthlyTarget = _standards.MonthlyHoursTarget;
+            
+            if (query.Month.HasValue && query.Month.Value >= 1 && query.Month.Value <= 12)
+                return monthlyTarget;
+
+            var today = DateTime.UtcNow.Date;
+            var currentCompanyYear = CompanyYearHelper.GetCurrentCompanyYear(today);
+            var months = query.Ytd && workloadYear == currentCompanyYear
+                ? ((today.Year - CompanyYearHelper.GetCompanyYearStart(currentCompanyYear).Year) * 12) +
+                  today.Month -
+                  CompanyYearHelper.GetCompanyYearStart(currentCompanyYear).Month +
+                  1
                 : 12;
 
-            return HourEntry.ExpectedMonthlyHours * months;
+            return monthlyTarget * months;
         }
 
         private static bool TryParseProjectStatus(string? value, out ProjectStatus status)
@@ -1308,7 +1812,7 @@ namespace PMHUB.Infrastructure.Repositories
             return Enum.TryParse(value, true, out type);
         }
 
-        private static bool TryParseProjectManagementType(string? value, out ProjectManagementType type)
+        private static bool TryParseProjectManagementType(string? value, out Category type)
         {
             return Enum.TryParse(value, true, out type);
         }
@@ -1333,20 +1837,38 @@ namespace PMHUB.Infrastructure.Repositories
                 TopN = query.TopN
             };
 
+            if (query.StartDate.HasValue || query.EndDate.HasValue)
+            {
+                var (currentStart, currentEnd) = ResolveProjectPeriod(query);
+                if (currentStart.HasValue && currentEnd.HasValue)
+                {
+                    var periodLength = currentEnd.Value.Date - currentStart.Value.Date;
+                    previous.EndDate = currentStart.Value.Date.AddDays(-1);
+                    previous.StartDate = previous.EndDate.Value.Date.Subtract(periodLength);
+                    previous.Year = null;
+                    previous.Month = null;
+                    previous.Ytd = false;
+                    return previous;
+                }
+            }
+
             if (query.Month.HasValue)
             {
                 var year = query.Year.HasValue && query.Year.Value > 0
                     ? query.Year.Value
-                    : DateTime.UtcNow.Year;
-                var currentMonth = new DateTime(year, query.Month.Value, 1);
+                    : CompanyYearHelper.GetCurrentCompanyYear(DateTime.UtcNow.Date);
+                var calendarYear = query.Month.Value >= 10 ? year - 1 : year;
+                var currentMonth = new DateTime(calendarYear, query.Month.Value, 1);
                 var previousMonth = currentMonth.AddMonths(-1);
-                previous.Year = previousMonth.Year;
+                previous.Year = CompanyYearHelper.GetCurrentCompanyYear(previousMonth);
                 previous.Month = previousMonth.Month;
                 previous.Ytd = false;
                 return previous;
             }
 
-            previous.Year = (query.Year.HasValue && query.Year.Value > 0 ? query.Year.Value : DateTime.UtcNow.Year) - 1;
+            previous.Year = (query.Year.HasValue && query.Year.Value > 0
+                ? query.Year.Value
+                : CompanyYearHelper.GetCurrentCompanyYear(DateTime.UtcNow.Date)) - 1;
             previous.Month = null;
             previous.Ytd = query.Ytd;
             return previous;

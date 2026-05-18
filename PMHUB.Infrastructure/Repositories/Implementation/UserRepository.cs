@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Persistence;
 using PMHUB.Infrastructure.Repositories.Generique;
@@ -35,6 +35,7 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Users
                 .OfType<NormalUser>()
                 .Include(u => u.Role)
+                .Where(u => u.IsActive)
                 .AsNoTracking()
                 .ToListAsync();
 
@@ -42,7 +43,7 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Users
                 .OfType<NormalUser>()
                 .Include(u => u.Role)
-                .Where(u => u.RoleId == roleId)
+                .Where(u => u.RoleId == roleId && u.IsActive)
                 .AsNoTracking()
                 .ToListAsync();
 
@@ -50,9 +51,18 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Users
                 .OfType<NormalUser>()
                 .Include(u => u.Role)
-                .Where(u => !u.IsApproved)
+                .Where(u => !u.IsApproved && u.IsActive)
                 .AsNoTracking()
                 .ToListAsync();
+
+        public async Task<IEnumerable<NormalUser>> GetActiveApprovedNormalUsersAsync() =>
+            await _context.Users
+                .OfType<NormalUser>()
+                .Include(u => u.Role)
+                .Where(u => u.IsApproved && u.IsActive)
+                .AsNoTracking()
+                .ToListAsync();
+
         public async Task<NormalUser?> GetNormalUserByIdAsync(Guid id) =>
     await _context.Users
         .OfType<NormalUser>()
@@ -70,6 +80,15 @@ namespace PMHUB.Infrastructure.Repositories
             }
 
             return user;
+        }
+
+        public async Task<NormalUser?> GetWithDependenciesAsync(Guid id)
+        {
+            return await _context.Users
+                .OfType<NormalUser>()
+                .Include(u => u.ProjectMembers)
+                .Include(u => u.HourEntries)
+                .FirstOrDefaultAsync(u => u.Id == id);
         }
     }
 

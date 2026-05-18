@@ -10,5 +10,7 @@ namespace PMHUB.Application.DTOs
 
         [Required(ErrorMessage = "Role ID is required.")]
         public Guid RoleId { get; set; }
+
+        public string? Role { get; set; }
      }
 }

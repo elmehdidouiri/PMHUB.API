@@ -23,10 +23,12 @@ namespace PMHUB.Application.DTOs
         public DateTime? RangeEndDate { get; set; }
 
         // Core Activity
-        public ProjectManagementType Category { get; set; } // DigitalOperation, DigitalSolution, Infrastructure, ProcessSimplification
+        public CategoryWork Category { get; set; } = CategoryWork.Project;
         public Guid? ProjectId { get; set; } // Filtered by Category
 
         // Hours Breakdown
+        [Range(0, 24)]
+        public decimal? TotalHours { get; set; }
         [Range(0, 24)]
         public decimal ExecutionHours { get; set; }
         [Range(0, 24)]
@@ -49,6 +51,9 @@ namespace PMHUB.Application.DTOs
 
         [MaxLength(1000)]
         public string? Notes { get; set; }
+
+        [MaxLength(1000)]
+        public string? ActivityNote { get; set; }
     }
 
     public enum DateSelectionMode

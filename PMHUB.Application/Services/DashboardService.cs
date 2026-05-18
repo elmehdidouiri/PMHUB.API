@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.IServices;
@@ -70,6 +70,40 @@ namespace PMHUB.Application.Services
             return result;
         }
 
+        public async Task<DashboardGroupedDistributionDto> GetGroupedDistributionAsync(DashboardQueryDto query, Guid? requesterUserId = null)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetGroupedDistributionAsync(query);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Grouped distribution dashboard generated in {DurationMs} ms | requester={Requester} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                requesterUserId,
+                query);
+
+            return result;
+        }
+
+        public async Task<DashboardGroupedDistributionCountsDto> GetGroupedDistributionCountsAsync(DashboardQueryDto query, Guid? requesterUserId = null)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetGroupedDistributionCountsAsync(query);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Grouped distribution counts dashboard generated in {DurationMs} ms | requester={Requester} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                requesterUserId,
+                query);
+
+            return result;
+        }
+
         public async Task<DashboardOverviewDto> GetMyDashboardAsync(Guid userId, DashboardQueryDto query)
         {
             NormalizeQuery(query);
@@ -77,6 +111,14 @@ namespace PMHUB.Application.Services
             var sw = Stopwatch.StartNew();
             var result = await _dashboardRepository.GetDashboardOverviewAsync(query, isAdminScope: false, userId);
             sw.Stop();
+
+            // Clear sensitive admin-only statistics for normal users
+            result.Charts.UsersByRole = new List<UsersByRoleDto>();
+            result.Charts.ProjectTeamMembersByRole = new List<UsersByRoleDto>();
+            
+            result.Summary.TotalUsers = 0;
+            result.Summary.ActiveUsers = 0;
+            result.Summary.ApprovedUsers = 0;
 
             _logger.LogInformation(
                 "Dashboard user generated in {DurationMs} ms | userId={UserId} | filters={@Filters}",
@@ -102,6 +144,12 @@ namespace PMHUB.Application.Services
                 query);
 
             return result;
+        }
+
+        public async Task<DashboardPersonalPerformanceDto> GetUserPerformanceDashboardAsync(Guid userId, DashboardQueryDto query)
+        {
+            NormalizeQuery(query);
+            return await _dashboardRepository.GetPersonalPerformanceDashboardAsync(userId, query);
         }
 
         private static void NormalizeQuery(DashboardQueryDto query)

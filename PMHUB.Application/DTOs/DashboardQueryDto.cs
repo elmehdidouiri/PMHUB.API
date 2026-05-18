@@ -6,6 +6,8 @@ namespace PMHUB.Application.DTOs
     {
         public int? Year { get; set; }
         public int? Month { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
         public Guid? RoleId { get; set; }
         public string? ProjectStatus { get; set; }
         public string? ProjectPhase { get; set; }

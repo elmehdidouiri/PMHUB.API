@@ -13,11 +13,17 @@ namespace PMHUB.API.Controllers
     public class InternsController : ControllerBase
     {
         private readonly IInternService _service;
+        private readonly IInternStatisticsService _statisticsService;
 
-        public InternsController(IInternService service)
+        public InternsController(IInternService service, IInternStatisticsService statisticsService)
         {
             _service = service;
+            _statisticsService = statisticsService;
         }
+
+        // ───────────────────────────────────────────────────────────
+        // GESTION DE BASE (CRUD)
+        // ───────────────────────────────────────────────────────────
 
         [HttpGet]
         public async Task<ActionResult<ApiResponse<IEnumerable<InternDto>>>> GetAll()
@@ -31,6 +37,13 @@ namespace PMHUB.API.Controllers
         {
             var result = await _service.GetByIdAsync(id);
             return Ok(ApiResponse<InternDto>.Ok(result));
+        }
+
+        [HttpGet("supervisor/{supervisorId:guid}")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<InternDto>>>> GetBySupervisor(Guid supervisorId)
+        {
+            var result = await _service.GetBySupervisorIdAsync(supervisorId);
+            return Ok(ApiResponse<IEnumerable<InternDto>>.Ok(result));
         }
 
         [HttpPost]
@@ -55,13 +68,98 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse.Ok("Intern supprimé avec succès."));
         }
 
-        private Guid GetAuthenticatedUserId()
+        // ───────────────────────────────────────────────────────────
+        // STATISTIQUES ET VISUALISATIONS
+        // ───────────────────────────────────────────────────────────
+
+     
+     
+        [HttpGet("{id:guid}/statistics")]
+        public async Task<ActionResult<ApiResponse<InternStatisticsDto>>> GetInternStatistics(Guid id)
+        {
+            var result = await _statisticsService.GetInternStatisticsAsync(id);
+            return Ok(ApiResponse<InternStatisticsDto>.Ok(result));
+        }
+
+          [HttpGet("{id:guid}/work-visualization")]
+        public async Task<ActionResult<ApiResponse<InternWorkVisualizationDto>>> GetInternWorkVisualization(
+            Guid id,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null)
+        {
+            var result = await _statisticsService.GetInternWorkVisualizationAsync(id, startDate, endDate);
+            return Ok(ApiResponse<InternWorkVisualizationDto>.Ok(result));
+        }
+
+          [HttpGet("{id:guid}/period-statistics")]
+        public async Task<ActionResult<ApiResponse<InternPeriodStatisticsDto>>> GetInternPeriodStatistics(
+            Guid id,
+            [FromQuery] int year,
+            [FromQuery] int? month = null)
+        {
+            if (month.HasValue && (month < 1 || month > 12))
+                return BadRequest(ApiResponse.Fail("Month must be between 1 and 12."));
+
+            var result = await _statisticsService.GetInternPeriodStatisticsAsync(id, year, month);
+            return Ok(ApiResponse<InternPeriodStatisticsDto>.Ok(result));
+        }
+
+         /// Dashboard agrégé pour tous les stagiaires
+         [HttpGet("dashboard/all")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<InternsDashboardDto>>> GetInternsDashboard()
+        {
+            var result = await _statisticsService.GetInternsDashboardAsync();
+            return Ok(ApiResponse<InternsDashboardDto>.Ok(result));
+        }
+
+         /// Statistiques pour les stagiaires d'un superviseur
+         [HttpGet("dashboard/supervisor/{supervisorId:guid}")]
+        public async Task<ActionResult<ApiResponse<InternsDashboardDto>>> GetSupervisorInternsDashboard(Guid supervisorId)
+        {
+            var currentUserId = GetAuthenticatedUserId();
+            var isAdmin = User.IsInRole("Admin");
+ 
+            if (!isAdmin && supervisorId != currentUserId)
+                return Forbid();
+
+            var result = await _statisticsService.GetSupervisorInternsStatisticsAsync(supervisorId);
+            return Ok(ApiResponse<InternsDashboardDto>.Ok(result));
+        }
+
+  
+ 
+        /// Supprimer tous les enregistrements d'un stagiaire
+ 
+        [HttpDelete("{id:guid}/all-data")]
+        public async Task<ActionResult<ApiResponse>> DeleteInternAllData(Guid id)
+        {
+            await _statisticsService.DeleteInternAllDataAsync(id, GetAuthenticatedUserId());
+            return Ok(ApiResponse.Ok("Toutes les données du stagiaire ont été supprimées avec succès."));
+        }
+  
+        /// Supprimer toutes les données de tous les stagiaires (Admin uniquement)
+ 
+        [HttpDelete("all-data")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse>> DeleteAllInternsData()
+        {
+            await _statisticsService.DeleteAllInternDataAsync(GetAuthenticatedUserId());
+            return Ok(ApiResponse.Ok("Toutes les données de tous les stagiaires ont été supprimées avec succès."));
+        }
+ 
+         /// Récupère l'ID de l'utilisateur authentifié depuis les claims JWT
+         private Guid GetAuthenticatedUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrWhiteSpace(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            throw new UnauthorizedException("User is not authenticated.");
+            {
+                throw new UnauthorizedException("Authenticated user could not be resolved.");
+            }
 
             return userId;
         }
+
+     
     }
 }

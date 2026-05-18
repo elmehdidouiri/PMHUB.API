@@ -13,6 +13,8 @@ namespace PMHUB.Application.DTOs
     {
         public int? Year { get; set; }
         public int? Month { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
         public bool Ytd { get; set; }
         public string? ProjectStatus { get; set; }
         public string? ProjectPhase { get; set; }
@@ -35,6 +37,8 @@ namespace PMHUB.Application.DTOs
         public decimal DelayRate { get; set; }
         public decimal AverageOtd { get; set; }
         public decimal AverageEffectiveness { get; set; }
+        public int DoneProjectsBelowTarget { get; set; }
+        public int DoneProjectsAboveTarget { get; set; }
         public int ActiveUsers { get; set; }
         public decimal TrackedHoursVariancePercent { get; set; }
         public int ProjectsKpiDelta { get; set; }

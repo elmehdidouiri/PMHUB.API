@@ -104,5 +104,35 @@ namespace PMHUB.Infrastructure.Repositories
 
             return await query.ToListAsync();
         }
+
+        public async Task<HashSet<Guid>> GetUserIdsWithEntriesSinceAsync(DateTime since)
+        {
+            var userIds = await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => h.Date >= since.Date)
+                .Select(h => h.UserId)
+                .Distinct()
+                .ToListAsync();
+
+            return userIds.ToHashSet();
+        }
+
+        public async Task<DateTime?> GetLastBookingDateAsync(Guid userId)
+        {
+            return await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => h.UserId == userId)
+                .OrderByDescending(h => h.Date)
+                .Select(h => (DateTime?)h.Date)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<decimal> SumUserHoursAsync(Guid userId, DateTime from, DateTime to)
+        {
+            return await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => h.UserId == userId && h.Date >= from.Date && h.Date <= to.Date)
+                .SumAsync(h => h.TotalHours);
+        }
     }
 }

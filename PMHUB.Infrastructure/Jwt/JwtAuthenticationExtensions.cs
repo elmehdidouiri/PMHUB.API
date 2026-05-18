@@ -61,7 +61,7 @@ namespace PMHUB.Infrastructure.Jwt
                             context.Response.StatusCode = StatusCodes.Status403Forbidden;
                             context.Response.ContentType = "application/json";
 
-                            var response = ApiResponse.Fail("Access denied. Insufficient permissions.");
+                            var response = ApiResponse.Fail("Not authorised.");
                             await context.Response.WriteAsJsonAsync(response);
                         }
                     };

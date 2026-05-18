@@ -11,9 +11,10 @@ namespace PMHUB.Application.DTOs
          public Guid UserId { get; set; }
         public string UserFullName { get; set; } = string.Empty;
 
-         public Guid ProjectId { get; set; }
+         public Guid? ProjectId { get; set; }
         public string ProjectName { get; set; } = string.Empty;
 
+        public CategoryWork Category { get; set; }
          public AllocationType AllocationType { get; set; }
         public ProjectType ProjectType { get; set; }
 

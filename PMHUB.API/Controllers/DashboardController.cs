@@ -58,7 +58,35 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<DashboardAdminBiDto>.Ok(result, message));
         }
 
+        [HttpGet("admin/grouped-distribution")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardGroupedDistributionDto>>> GetGroupedDistribution([FromQuery] DashboardQueryDto query)
+        {
+            var requesterId = TryGetAuthenticatedUserId();
+            var result = await _dashboardService.GetGroupedDistributionAsync(query, requesterId);
+            var totalProjects = result.Status.SelectMany(x => x.Projects).Select(x => x.Id).Distinct().Count();
+            var message = totalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardGroupedDistributionDto>.Ok(result, message));
+        }
+
+        [HttpGet("admin/grouped-distribution/counts")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardGroupedDistributionCountsDto>>> GetGroupedDistributionCounts([FromQuery] DashboardQueryDto query)
+        {
+            var requesterId = TryGetAuthenticatedUserId();
+            var result = await _dashboardService.GetGroupedDistributionCountsAsync(query, requesterId);
+            var message = result.Summary.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardGroupedDistributionCountsDto>.Ok(result, message));
+        }
+
         [HttpGet("me")]
+        [Authorize(Policy = "UserOnly")]
         public async Task<ActionResult<ApiResponse<DashboardOverviewDto>>> GetMyDashboard([FromQuery] DashboardQueryDto query)
         {
             var userId = GetAuthenticatedUserId();
@@ -71,12 +99,25 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpGet("me/performance")]
+        [Authorize(Policy = "UserOnly")]
         public async Task<ActionResult<ApiResponse<DashboardPersonalPerformanceDto>>> GetMyPerformanceDashboard([FromQuery] DashboardQueryDto query)
         {
             var userId = GetAuthenticatedUserId();
             var result = await _dashboardService.GetMyPerformanceDashboardAsync(userId, query);
             var message = result.Summary.TotalLoggedHours == 0 && result.Summary.AssignedProjects == 0
                 ? "No personal performance data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardPersonalPerformanceDto>.Ok(result, message));
+        }
+
+        [HttpGet("admin/user/{userId:guid}/performance")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardPersonalPerformanceDto>>> GetUserPerformanceDashboard(Guid userId, [FromQuery] DashboardQueryDto query)
+        {
+            var result = await _dashboardService.GetUserPerformanceDashboardAsync(userId, query);
+            var message = result.Summary.TotalLoggedHours == 0 && result.Summary.AssignedProjects == 0
+                ? "No personal performance data was found for this user with the requested filters."
                 : null;
 
             return Ok(ApiResponse<DashboardPersonalPerformanceDto>.Ok(result, message));

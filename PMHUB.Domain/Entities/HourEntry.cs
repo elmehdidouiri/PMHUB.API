@@ -19,11 +19,13 @@ namespace PMHUB.Domain.Entities
         [ForeignKey(nameof(UserId))]
         public NormalUser User { get; set; } = null!;
 
-        [Required]
-        public Guid ProjectId { get; set; }
+        public Guid? ProjectId { get; set; }
 
         [ForeignKey(nameof(ProjectId))]
-        public Project Project { get; set; } = null!;
+        public Project? Project { get; set; }
+
+        [Required]
+        public CategoryWork Category { get; set; } = CategoryWork.Project;
 
         [Required]
         public AllocationType AllocationType { get; set; }
@@ -61,10 +63,6 @@ namespace PMHUB.Domain.Entities
         public decimal InternManagementHours { get; set; }
 
         public ICollection<HourEntryInternSupervision> InternSupervisions { get; set; } = new List<HourEntryInternSupervision>();
-
-        public const decimal ExpectedMonthlyHours = 161.5m;
-        public const decimal HoursPerDay = 9.0m;
-        public const int WorkingDaysPerMonth = 22;
 
         [Column(TypeName = "decimal(5,2)")]
         public decimal TotalHours { get; private set; }

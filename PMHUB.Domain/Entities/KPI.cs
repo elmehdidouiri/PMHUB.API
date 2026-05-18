@@ -31,19 +31,28 @@ namespace PMHUB.Domain.Entities
         [Column(TypeName = "decimal(18,2)")]
         public decimal ActualHours { get; set; } = 0m;
 
-         [Column(TypeName = "decimal(18,2)")]
-        public decimal? CalculatedValue =>
-            Name switch
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? CalculatedValue
+        {
+            get
             {
-                "OTD" when EstimatedDueDate.HasValue && ActualEndDate.HasValue =>
-                    Math.Max(0, 100 - ((decimal)(ActualEndDate.Value - EstimatedDueDate.Value).TotalDays
-                        / Math.Max(1, (decimal)(EstimatedDueDate.Value - DateTime.UtcNow).TotalDays)) * 100),
+                if (string.Equals(Name, "OTD", StringComparison.OrdinalIgnoreCase) &&
+                    EstimatedDueDate.HasValue &&
+                    ActualEndDate.HasValue)
+                {
+                    return ActualEndDate.Value.Date <= EstimatedDueDate.Value.Date ? 100m : 0m;
+                }
 
-                "Effectiveness" when EstimatedHours > 0 && ActualHours > 0 =>
-                    Math.Round((EstimatedHours / ActualHours) * 100, 2),
+                if (string.Equals(Name, "Effectiveness", StringComparison.OrdinalIgnoreCase) &&
+                    EstimatedHours > 0 &&
+                    ActualHours > 0)
+                {
+                    return Math.Round((EstimatedHours / ActualHours) * 100, 2);
+                }
 
-                _ => CurrentValue > 0 ? CurrentValue : null
-            };
+                return CurrentValue > 0 ? CurrentValue : null;
+            }
+        }
 
         public string? Description { get; set; }
 

@@ -12,5 +12,13 @@ namespace PMHUB.Application.IServices
         Task SendApprovalEmailAsync(string toEmail, string firstName);
         Task SendRejectionEmailAsync(string toEmail, string firstName);
         Task SendPasswordResetCodeAsync(string toEmail, string firstName, string code, int expiresInMinutes);
+        Task SendHoursAllocationReminderAsync(string toEmail, string firstName, decimal currentHours);
+        Task SendHoursAllocationReminderAsync(
+            string toEmail,
+            string firstName,
+            decimal currentHours,
+            decimal expectedHours,
+            decimal missingHours);
+        Task SendSupervisorVisitReminderAsync(string toEmail, string firstName);
     }
 }

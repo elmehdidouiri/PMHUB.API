@@ -13,11 +13,14 @@ namespace PMHUB.Application.DTOs
         public string Name { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string Phase { get; set; } = string.Empty;
-        public ProjectManagementType ProjectManagementType { get; set; }
+        public Category ProjectManagementType { get; set; }
         public string ProjectManagementTypeLabel => ProjectManagementType.ToString();
         public string ProjectType { get; set; } = string.Empty;
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
+        public int ProgressPercentage { get; set; }
+        public int Progress => ProgressPercentage;
+        public bool IsDelayed { get; set; }
         public decimal Budget { get; set; }
         public string DepartmentName { get; set; } = string.Empty;
         public string PlantName { get; set; } = string.Empty;

@@ -9,5 +9,6 @@ namespace PMHUB.Application.IServices
         Task<InternDto> GetByIdAsync(Guid id);
         Task<InternDto> UpdateAsync(UpdateInternDto dto, Guid currentUserId);
         Task DeleteAsync(Guid id, Guid currentUserId);
+        Task<IEnumerable<InternDto>> GetBySupervisorIdAsync(Guid supervisorId);
     }
 }

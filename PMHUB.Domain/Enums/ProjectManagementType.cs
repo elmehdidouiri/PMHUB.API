@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace PMHUB.Domain.Enums
 {
-    public enum ProjectManagementType
+    public enum Category
     {
         DigitalOperation = 0,
         DigitalSolution = 1,

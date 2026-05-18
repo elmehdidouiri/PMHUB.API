@@ -20,6 +20,8 @@ namespace PMHUB.Application.DTOs
         public int OnHoldProjects { get; set; }
         public int DoneProjects { get; set; }
         public int DelayedProjects { get; set; }
+        public int DoneProjectsBelowTarget { get; set; }
+        public int DoneProjectsAboveTarget { get; set; }
         public decimal AverageProgress { get; set; }
         public decimal AverageOtd { get; set; }
         public decimal AverageEffectiveness { get; set; }

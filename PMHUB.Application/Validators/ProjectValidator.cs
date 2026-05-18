@@ -9,13 +9,15 @@ namespace PMHUB.Application.Validators
     {
         public static void ValidateDates(CreateFullProjectDto dto)
         {
-            if (dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
+            var startDate = dto.StartDate ?? DateTime.UtcNow.Date;
+
+            if (dto.EndDate.HasValue && dto.EndDate <= startDate)
             {
                 throw new BadRequestException(
                     "The project end date must be greater than the project start date.");
             }
 
-            if (dto.EstimatedDueDate.HasValue && dto.EstimatedDueDate <= dto.StartDate)
+            if (dto.EstimatedDueDate.HasValue && dto.EstimatedDueDate <= startDate)
             {
                 throw new BadRequestException(
                     "The estimated due date must be greater than the project start date.");
@@ -24,13 +26,13 @@ namespace PMHUB.Application.Validators
 
         public static void ValidateDates(UpdateProjectDto dto)
         {
-            if (dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
+            if (dto.StartDate.HasValue && dto.EndDate.HasValue && dto.EndDate <= dto.StartDate)
             {
                 throw new BadRequestException(
                     "The project end date must be greater than the project start date.");
             }
 
-            if (dto.EstimatedDueDate.HasValue && dto.EstimatedDueDate <= dto.StartDate)
+            if (dto.StartDate.HasValue && dto.EstimatedDueDate.HasValue && dto.EstimatedDueDate <= dto.StartDate)
             {
                 throw new BadRequestException(
                     "The estimated due date must be greater than the project start date.");

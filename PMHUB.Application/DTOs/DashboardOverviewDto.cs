@@ -1,4 +1,4 @@
-﻿namespace PMHUB.Application.DTOs
+namespace PMHUB.Application.DTOs
 {
     public class DashboardOverviewDto
     {
@@ -15,9 +15,12 @@
         public decimal AverageOtd { get; set; }
         public decimal AverageEffectiveness { get; set; }
         public int DelayedProjects { get; set; }
+        public int DoneProjectsBelowTarget { get; set; }
+        public int DoneProjectsAboveTarget { get; set; }
         public int TotalUsers { get; set; }
         public int ActiveUsers { get; set; }
         public int ApprovedUsers { get; set; }
+        public decimal AnnualGoalProgressPercentage { get; set; }
     }
 
     public class DashboardChartsDto

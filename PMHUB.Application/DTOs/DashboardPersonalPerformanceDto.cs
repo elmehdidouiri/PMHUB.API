@@ -21,6 +21,7 @@ namespace PMHUB.Application.DTOs
         public decimal PremiumApprovedHours { get; set; }
         public decimal PremiumPendingHours { get; set; }
         public decimal TotalCost { get; set; }
+        public decimal AnnualGoalProgressPercentage { get; set; }
     }
 
     public class DashboardPersonalPerformanceChartsDto

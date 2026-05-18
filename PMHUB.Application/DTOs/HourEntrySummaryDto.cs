@@ -6,6 +6,7 @@ namespace PMHUB.Application.DTOs
     public class HourEntrySummaryDto
     {
         public Guid Id { get; set; }
+        public CategoryWork Category { get; set; }
         public string ProjectName { get; set; } = string.Empty;
         public DateTime Date { get; set; }
 

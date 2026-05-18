@@ -262,7 +262,7 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasMany(p => p.HourEntries)
                 .WithOne(h => h.Project)
                 .HasForeignKey(h => h.ProjectId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
 
 
 
@@ -561,7 +561,12 @@ namespace PMHUB.Infrastructure.Persistence
             builder.Entity<HourEntry>()
                 .HasIndex(h => new { h.UserId, h.ProjectId, h.Date })
                 .IsUnique()
-                .HasFilter("[AllocationType] = 0");
+                .HasFilter("[AllocationType] = 0 AND [ProjectId] IS NOT NULL");
+
+            builder.Entity<HourEntry>()
+                .HasIndex(h => new { h.UserId, h.Category, h.Date })
+                .IsUnique()
+                .HasFilter("[AllocationType] = 0 AND [ProjectId] IS NULL");
             builder.Entity<HourEntry>()
                 .Property(h => h.HourlyRateAmount)
                 .HasColumnType("decimal(10,2)");

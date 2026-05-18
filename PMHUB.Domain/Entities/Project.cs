@@ -59,7 +59,7 @@ namespace PMHUB.Domain.Entities
         public string? ServerHostName { get; set; }
 
         [Required]
-        public ProjectManagementType ProjectManagementType { get; set; }
+        public Category ProjectManagementType { get; set; }
 
         [Required]
         public ProjectType ProjectType { get; set; }

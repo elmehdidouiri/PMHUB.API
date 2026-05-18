@@ -23,6 +23,7 @@ namespace PMHUB.Application.Mappings
                 UserFullName = userFullName ?? "N/A",
                 ProjectId = entry.ProjectId,
                 ProjectName = projectName ?? "N/A",
+                Category = entry.Category,
                 AllocationType = entry.AllocationType,
                 ProjectType = entry.ProjectType,
                 Date = entry.Date,
@@ -77,7 +78,8 @@ namespace PMHUB.Application.Mappings
             return new HourEntrySummaryDto
             {
                 Id = entry.Id,
-                ProjectName = entry.Project?.Name ?? "N/A",
+                Category = entry.Category,
+                ProjectName = entry.Project?.Name ?? entry.Category.ToString(),
                 Date = entry.Date,
                 TotalHours = entry.TotalHours,
                 TotalCost = entry.TotalCost,

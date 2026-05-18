@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using PMHUB.API.BackgroundServices;
 using PMHUB.API.Helpers;
 using PMHUB.API.Middleware;
 using PMHUB.Application.DTOs;
@@ -22,6 +23,8 @@ using PMHUB.Infrastructure.Storage;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+Console.WriteLine(BCrypt.Net.BCrypt.HashPassword("user123"));
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -103,6 +106,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireClaim("isAdmin", "true"));
 
+    options.AddPolicy("UserOnly", policy =>
+        policy.RequireClaim("isAdmin", "false"));
+
     options.AddPolicy("ApprovedUser", policy =>
         policy.RequireAuthenticatedUser());
 });
@@ -115,6 +121,8 @@ builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IHourEntryRepository, HourEntryRepository>();
 builder.Services.AddScoped<IProjectFileRepository, ProjectFileRepository>();
 builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
+builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
+builder.Services.AddScoped<IHoursAllocationDashboardRepository, HoursAllocationDashboardRepository>();
 builder.Services.AddScoped<IInternAllocationRepository, InternAllocationRepository>();
 
 builder.Services.AddScoped<IRepository<UserHourlyRate>, Repository<UserHourlyRate>>();
@@ -138,6 +146,11 @@ builder.Services.AddScoped<IHourEntryService, HourEntryService>();
 builder.Services.AddScoped<IHourSummaryService, HourSummaryService>();
 builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+builder.Services.AddScoped<IHoursAllocationDashboardService, HoursAllocationDashboardService>();
+builder.Services.AddScoped<IInternStatisticsService, InternStatisticsService>();
+builder.Services.AddScoped<IHourBookingReminderService, HourBookingReminderService>();
+builder.Services.AddHostedService<WeeklyHourBookingReminderHostedService>();
 
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -154,6 +167,12 @@ builder.Services.Configure<EmailSettings>(
 
 builder.Services.Configure<AuthSettings>(
     builder.Configuration.GetSection("AuthSettings"));
+
+builder.Services.Configure<PMHUB.Shared.Models.CompanyStandards>(
+    builder.Configuration.GetSection("CompanyStandards"));
+
+builder.Services.Configure<HourBookingReminderSettings>(
+    builder.Configuration.GetSection("HourBookingReminders"));
 
 var app = builder.Build();
 

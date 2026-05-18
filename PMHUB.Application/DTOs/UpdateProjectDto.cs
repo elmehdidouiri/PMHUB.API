@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using PMHUB.Domain.Enums;
 
 namespace PMHUB.Application.DTOs
@@ -34,7 +35,7 @@ namespace PMHUB.Application.DTOs
         public ProcessStatus ProcessStatus { get; set; } = ProcessStatus.NotStarted;
 
         [Required(ErrorMessage = "Project management type is required.")]
-        public ProjectManagementType? ProjectManagementType { get; set; }
+        public Category? ProjectManagementType { get; set; }
 
         [Required(ErrorMessage = "Project type is required.")]
         public ProjectType? ProjectType { get; set; }
@@ -83,10 +84,23 @@ namespace PMHUB.Application.DTOs
         public ICollection<CreateStrategicCriterionDto> StrategicCriteria { get; set; }
             = new List<CreateStrategicCriterionDto>();
 
+        public ICollection<CreateProjectResourceDto> ProjectResources { get; set; }
+            = new List<CreateProjectResourceDto>();
+
+        public ICollection<CreateKpiDto> KPIs { get; set; } = new List<CreateKpiDto>();
+
+        [JsonPropertyName("budgetItems")]
+        public ICollection<CreateProjectResourceDto> BudgetItems { get; set; }
+            = new List<CreateProjectResourceDto>();
+
          public ICollection<Guid> BusinessUnitIds { get; set; } = new List<Guid>();
         public ICollection<Guid> TechnologyIds { get; set; } = new List<Guid>();
         public ICollection<Guid> SolutionDomainIds { get; set; } = new List<Guid>();
         public ICollection<CreateProjectMemberDto> Members { get; set; }
+              = new List<CreateProjectMemberDto>();
+
+        [JsonPropertyName("teamMembers")]
+        public ICollection<CreateProjectMemberDto> TeamMembers { get; set; }
               = new List<CreateProjectMemberDto>();
     }
 }

@@ -49,6 +49,7 @@ namespace PMHUB.Application.Services.Implementation
 
             var userRate = await GetActiveUserRateAsync(userId);
             var isPremiumSelected = dto.BookingType == Domain.Enums.BookingType.Premium;
+            var isProjectWorkMode = dto.Category == Domain.Enums.CategoryWork.Project;
 
             var datesToProcess = new List<DateTime>();
 
@@ -81,42 +82,60 @@ namespace PMHUB.Application.Services.Implementation
             HourEntry? lastCreatedEntry = null;
             Project? project = null;
 
-            if (dto.ProjectId.HasValue)
+            if (isProjectWorkMode)
             {
+                if (!dto.ProjectId.HasValue || dto.ProjectId.Value == Guid.Empty)
+                    throw new BadRequestException("Project is required for project work bookings.");
+
                 project = await _projectRepository.GetByIdAsync(dto.ProjectId.Value)
                     ?? throw new NotFoundException("Project", dto.ProjectId.Value);
 
-                var isMember = await _projectRepository.FindAsync(p => p.Id == dto.ProjectId.Value && p.ProjectMembers.Any(pm => pm.UserId == userId));
-                if (!isMember.Any())
-                    throw new ForbiddenException("You must be a member of this project to perform this action.");
+                var canBookProjectHours = await _projectRepository.FindAsync(p =>
+                    p.Id == dto.ProjectId.Value &&
+                    (p.ProjectManagerId == userId || p.ProjectMembers.Any(pm => pm.UserId == userId)));
+                if (!canBookProjectHours.Any())
+                    throw new ForbiddenException("You must be a project team member or the project manager to book hours on this project.");
+            }
+            else if (dto.ProjectId.HasValue && dto.ProjectId.Value != Guid.Empty)
+            {
+                throw new BadRequestException("Project must be empty for non-project activities.");
             }
 
             foreach (var date in datesToProcess)
             {
                 // Unicité : un seul booking par projet par jour
-                if (dto.ProjectId.HasValue)
+                if (isProjectWorkMode)
                 {
                    var existing = await _hourEntryRepository.FindAsync(h => h.UserId == userId && h.ProjectId == dto.ProjectId.Value && h.Date.Date == date.Date);
                    if (existing.Any())
                        continue; // On passe ou on throw ? L'utilisateur a dit "on peut pas booker 2 fois", donc on skip ou on notifie. Ici on skip pour le bulk.
                 }
+                else
+                {
+                   var existing = await _hourEntryRepository.FindAsync(h => h.UserId == userId && h.Category == dto.Category && h.Date.Date == date.Date);
+                   if (existing.Any())
+                       continue;
+                }
+
+                var hours = ResolveHours(dto);
 
                 var hourEntry = new HourEntry
                 {
                     UserId = userId,
-                    ProjectId = dto.ProjectId ?? Guid.Empty, // A voir comment gérer le cas sans projet (Holiday etc)
+                    ProjectId = isProjectWorkMode ? dto.ProjectId : null,
+                    Category = dto.Category,
                     AllocationType = dto.AllocationFrequency ?? Domain.Enums.AllocationType.Daily,
                     ProjectType = Domain.Enums.ProjectType.NewProject, // TODO: Mapper vers la bonne valeur ou adapter l'entité
                     Date = date.Date,
-                    ExecutionHours = dto.ExecutionHours,
-                    SupervisionHours = dto.TechnicalSupervisionHours,
-                    ProcessHours = dto.ProcessRelatedHours,
-                    ManagementHours = dto.ProjectManagementHours,
-                    RAndDHours = dto.ResearchAndDevHours,
-                    WorkshopHours = dto.WorkshopHours,
-                    OtherHours = dto.OtherActivitiesHours,
-                    InternManagementHours = dto.InternManagementHours,
-                    Notes = dto.Notes,
+                    ExecutionHours = hours.Execution,
+                    SupervisionHours = hours.Supervision,
+                    ProcessHours = hours.Process,
+                    ManagementHours = hours.Management,
+                    RAndDHours = hours.RAndD,
+                    WorkshopHours = hours.Workshop,
+                    OtherHours = hours.Other,
+                    InternManagementHours = hours.InternManagement,
+                    Notes = dto.ActivityNote ?? dto.Notes,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -152,7 +171,7 @@ namespace PMHUB.Application.Services.Implementation
                 await RecalculateProjectActualHoursAndProgressAsync(project.Id);
             }
 
-            return lastCreatedEntry.ToDto(project?.Name ?? "N/A", $"{user.FirstName} {user.LastName}");
+            return lastCreatedEntry.ToDto(project?.Name ?? lastCreatedEntry.Category.ToString(), $"{user.FirstName} {user.LastName}");
         }
 
         public async Task<HourEntryDto> UpdateAsync(Guid id, UpdateHourEntryDto dto, Guid userId)
@@ -167,14 +186,23 @@ namespace PMHUB.Application.Services.Implementation
                 if (entry.UserId != userId)
             throw new ForbiddenException("You can only update your own bookings.");
 
-                entry.ExecutionHours = dto.ExecutionHours;
-                entry.SupervisionHours = dto.SupervisionHours;
-                entry.ProcessHours = dto.ProcessHours;
-                entry.ManagementHours = dto.ManagementHours;
-                entry.RAndDHours = dto.RAndDHours;
-                entry.WorkshopHours = dto.WorkshopHours;
-                entry.OtherHours = dto.OtherHours;
-                entry.Notes = dto.Notes;
+                if (dto.Category.HasValue && dto.Category.Value != entry.Category)
+                {
+                    if (entry.Category == Domain.Enums.CategoryWork.Project || dto.Category.Value == Domain.Enums.CategoryWork.Project)
+                        throw new BadRequestException("Project bookings cannot be converted to non-project activities.");
+
+                    entry.Category = dto.Category.Value;
+                }
+
+                var hours = ResolveHours(dto, entry.Category);
+                entry.ExecutionHours = hours.Execution;
+                entry.SupervisionHours = hours.Supervision;
+                entry.ProcessHours = hours.Process;
+                entry.ManagementHours = hours.Management;
+                entry.RAndDHours = hours.RAndD;
+                entry.WorkshopHours = hours.Workshop;
+                entry.OtherHours = hours.Other;
+                entry.Notes = dto.ActivityNote ?? dto.Notes;
 
                 var userRate = await GetActiveUserRateAsync(userId);
                 var isPremiumSelected = dto.BookingType.HasValue
@@ -191,14 +219,17 @@ namespace PMHUB.Application.Services.Implementation
 
                 _hourEntryRepository.Update(entry);
                 await _hourEntryRepository.SaveChangesAsync();
-                await RecalculateProjectActualHoursAndProgressAsync(entry.ProjectId);
+                if (entry.ProjectId.HasValue)
+                    await RecalculateProjectActualHoursAndProgressAsync(entry.ProjectId.Value);
 
-                var project = await _projectRepository.GetByIdAsync(entry.ProjectId);
+                var project = entry.ProjectId.HasValue
+                    ? await _projectRepository.GetByIdAsync(entry.ProjectId.Value)
+                    : null;
                 var user = await _userRepository.GetNormalUserByIdAsync(userId);
 
                 _logger.LogInformation("UpdateAsync terminé — HourEntryId: {HourEntryId}, TotalHours: {TotalHours}", entry.Id, entry.TotalHours);
 
-                return entry.ToDto(project!.Name, $"{user!.FirstName} {user.LastName}");
+                return entry.ToDto(project?.Name ?? entry.Category.ToString(), $"{user!.FirstName} {user.LastName}");
             }
             catch (Exception ex)
             {
@@ -222,7 +253,8 @@ namespace PMHUB.Application.Services.Implementation
                 var projectId = entry.ProjectId;
                 _hourEntryRepository.Remove(entry);
                 await _hourEntryRepository.SaveChangesAsync();
-                await RecalculateProjectActualHoursAndProgressAsync(projectId);
+                if (projectId.HasValue)
+                    await RecalculateProjectActualHoursAndProgressAsync(projectId.Value);
 
                 _logger.LogInformation("DeleteAsync terminé — HourEntryId: {HourEntryId}", id);
             }
@@ -327,7 +359,9 @@ namespace PMHUB.Application.Services.Implementation
         {
             _logger.LogInformation("GetYtdDashboardAsync — User: {UserId}, CompanyYear: {CompanyYear}", userId, companyYear);
             var startDate = CompanyYearHelper.GetCompanyYearStart(companyYear);
-            var endDate = CompanyYearHelper.GetCompanyYearEnd(companyYear);
+            var fiscalYearEndDate = CompanyYearHelper.GetCompanyYearEnd(companyYear);
+            var today = DateTime.UtcNow.Date;
+            var endDate = (today > fiscalYearEndDate ? fiscalYearEndDate : today).Date.AddDays(1).AddTicks(-1);
 
             var entries = await _hourEntryRepository.FindWithIncludesAsync(h => h.UserId == userId && h.Date >= startDate && h.Date <= endDate);
             var entriesList = entries.ToList();
@@ -340,10 +374,10 @@ namespace PMHUB.Application.Services.Implementation
             var premiumPendingHours = entriesList.Where(h => h.IsPremium && h.PremiumApprovalStatus == Domain.Enums.ApprovalStatus.Pending).Sum(h => h.TotalHours);
 
             var monthlyBreakdown = new List<MonthlyHoursDashboardDto>();
-            for (int month = 9; month <= 12; month++)
+            for (int month = 10; month <= 12; month++)
+                monthlyBreakdown.Add(await GetMonthlyDashboardAsync(userId, companyYear - 1, month));
+            for (int month = 1; month <= 9; month++)
                 monthlyBreakdown.Add(await GetMonthlyDashboardAsync(userId, companyYear, month));
-            for (int month = 1; month <= 8; month++)
-                monthlyBreakdown.Add(await GetMonthlyDashboardAsync(userId, companyYear + 1, month));
 
             return new YtdDashboardDto
             {
@@ -365,7 +399,7 @@ namespace PMHUB.Application.Services.Implementation
         {
             _logger.LogInformation("GetPendingPremiumAsync appelé");
             var entries = await _hourEntryRepository.FindWithIncludesAsync(h => h.IsPremium && h.PremiumApprovalStatus == Domain.Enums.ApprovalStatus.Pending);
-            return entries.Select(h => h.ToDto(h.Project?.Name ?? "N/A", h.User != null ? $"{h.User.FirstName} {h.User.LastName}" : "N/A"));
+            return entries.Select(h => h.ToDto(h.Project?.Name ?? h.Category.ToString(), h.User != null ? $"{h.User.FirstName} {h.User.LastName}" : "N/A"));
         }
 
         public async Task ApprovePremiumAsync(ApprovePremiumDto dto)
@@ -400,9 +434,85 @@ namespace PMHUB.Application.Services.Implementation
         public async Task<IEnumerable<ProjectSummaryDto>> GetMyProjectsAsync(Guid userId)
         {
             _logger.LogInformation("GetMyProjectsAsync — User: {UserId}", userId);
-            var projects = await _projectRepository.FindAsync(p => p.ProjectMembers.Any(m => m.UserId == userId));
+            var projects = await _projectRepository.FindAsync(p =>
+                p.ProjectManagerId == userId || p.ProjectMembers.Any(m => m.UserId == userId));
             return projects.Select(ProjectMapper.ToSummaryDto);
         }
+
+        private static HourValues ResolveHours(CreateHourEntryDto dto)
+        {
+            if (dto.Category == Domain.Enums.CategoryWork.Project)
+            {
+                return new HourValues(
+                    dto.ExecutionHours,
+                    dto.TechnicalSupervisionHours,
+                    dto.ProcessRelatedHours,
+                    dto.ProjectManagementHours,
+                    dto.ResearchAndDevHours,
+                    dto.WorkshopHours,
+                    dto.OtherActivitiesHours,
+                    dto.InternManagementHours);
+            }
+
+            var totalHours = dto.TotalHours
+                ?? dto.WorkshopHours
+                + dto.OtherActivitiesHours
+                + dto.ExecutionHours
+                + dto.TechnicalSupervisionHours
+                + dto.ProcessRelatedHours
+                + dto.ProjectManagementHours
+                + dto.ResearchAndDevHours
+                + dto.InternManagementHours;
+
+            if (totalHours <= 0)
+                throw new BadRequestException("Total hours are required for non-project activities.");
+
+            return dto.Category == Domain.Enums.CategoryWork.Workshop
+                ? new HourValues(0, 0, 0, 0, 0, totalHours, 0, 0)
+                : new HourValues(0, 0, 0, 0, 0, 0, totalHours, 0);
+        }
+
+        private static HourValues ResolveHours(UpdateHourEntryDto dto, Domain.Enums.CategoryWork category)
+        {
+            if (category == Domain.Enums.CategoryWork.Project)
+            {
+                return new HourValues(
+                    dto.ExecutionHours,
+                    dto.SupervisionHours,
+                    dto.ProcessHours,
+                    dto.ManagementHours,
+                    dto.RAndDHours,
+                    dto.WorkshopHours,
+                    dto.OtherHours,
+                    0);
+            }
+
+            var totalHours = dto.TotalHours
+                ?? dto.WorkshopHours
+                + dto.OtherHours
+                + dto.ExecutionHours
+                + dto.SupervisionHours
+                + dto.ProcessHours
+                + dto.ManagementHours
+                + dto.RAndDHours;
+
+            if (totalHours <= 0)
+                throw new BadRequestException("Total hours are required for non-project activities.");
+
+            return category == Domain.Enums.CategoryWork.Workshop
+                ? new HourValues(0, 0, 0, 0, 0, totalHours, 0, 0)
+                : new HourValues(0, 0, 0, 0, 0, 0, totalHours, 0);
+        }
+
+        private sealed record HourValues(
+            decimal Execution,
+            decimal Supervision,
+            decimal Process,
+            decimal Management,
+            decimal RAndD,
+            decimal Workshop,
+            decimal Other,
+            decimal InternManagement);
 
         private async Task<UserHourlyRate> GetActiveUserRateAsync(Guid userId)
         {
@@ -476,3 +586,5 @@ namespace PMHUB.Application.Services.Implementation
         }
     }
 }
+
+

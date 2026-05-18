@@ -54,6 +54,7 @@ namespace PMHUB.Application.Mappings
             SolutionDomains = p.ProjectSolutionDomains
                 .Select(psd => psd.SolutionDomain?.Name ?? string.Empty).ToList(),
              Members = p.ProjectMembers
+                .Where(pm => !p.ProjectManagerId.HasValue || pm.UserId != p.ProjectManagerId.Value)
                 .Select(pm => new ProjectMemberDto
                 {
                     ProjectMemberId = pm.Id,
@@ -130,6 +131,10 @@ namespace PMHUB.Application.Mappings
             ProjectType = p.ProjectType.ToString(),
             StartDate = p.StartDate,
             EndDate = p.EndDate,
+            ProgressPercentage = p.ProgressPercentage,
+            IsDelayed = p.EstimatedDueDate.HasValue &&
+                p.EstimatedDueDate.Value.Date < DateTime.UtcNow.Date &&
+                p.Status != PMHUB.Domain.Enums.ProjectStatus.Done,
             Budget = p.Budget,
             DepartmentName = p.Department?.Name ?? string.Empty,
             PlantName = p.Department?.Plant?.Name ?? string.Empty,

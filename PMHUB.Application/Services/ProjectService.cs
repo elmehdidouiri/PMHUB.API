@@ -77,17 +77,34 @@ namespace PMHUB.Application.Services
         {
             _logger.LogInformation("Création du projet {ProjectName}", dto.Name);
 
-            var department = await _departmentRepository.GetByIdAsync(dto.DepartmentId.Value)
-                ?? throw new NotFoundException("Department", dto.DepartmentId.Value);
+            var departmentId = dto.DepartmentId
+                ?? throw new BadRequestException("Department is required.");
+            var projectManagementType = dto.ProjectManagementType
+                ?? throw new BadRequestException("Project management type is required.");
+            var projectType = dto.ProjectType
+                ?? throw new BadRequestException("Project type is required.");
+
+            var department = await _departmentRepository.GetByIdAsync(departmentId)
+                ?? throw new NotFoundException("Department", departmentId);
 
             var existing = await _projectRepository.FindAsync(
-                p => p.Name == dto.Name && p.DepartmentId == dto.DepartmentId.Value);
+                p => p.Name == dto.Name && p.DepartmentId == departmentId);
             if (existing.Any()) throw new ConflictException("Project", dto.Name);
 
             ProjectValidator.ValidateDates(dto);
             ProjectValidator.ValidatePhaseStatus(dto.Phase, dto.Status);
 
-            var project = BuildProject(dto);
+            if (dto.ProjectManagerId.HasValue)
+                await (_userRepository.GetByIdAsync(dto.ProjectManagerId.Value)
+                    ?? throw new NotFoundException("User", dto.ProjectManagerId.Value));
+
+            if (dto.ParentProjectId.HasValue)
+            {
+                var parentProject = await _projectRepository.GetByIdWithIncludesAsync(dto.ParentProjectId.Value);
+                ProjectValidator.ValidateManagementType(dto, parentProject);
+            }
+
+            var project = BuildProject(dto, departmentId, projectManagementType, projectType);
 
              await AttachRelationsAsync(project, dto);
 
@@ -134,6 +151,8 @@ namespace PMHUB.Application.Services
                 AverageEffectiveness = (double)CalculateAverageEffectiveness(projectList),
                 AverageOtd = (double)CalculateAverageOtd(projectList),
                 DelayedProjects = projectList.Count(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value.Date < DateTime.UtcNow.Date && p.Status != ProjectStatus.Done),
+                DoneProjectsBelowTarget = projectList.Count(p => p.Status == ProjectStatus.Done && p.EstimatedHours > 0 && p.ActualHours < p.EstimatedHours),
+                DoneProjectsAboveTarget = projectList.Count(p => p.Status == ProjectStatus.Done && p.EstimatedHours > 0 && p.ActualHours > p.EstimatedHours),
                 ProjectsByPhase = projectList
                     .GroupBy(p => p.Phase.ToString())
                     .ToDictionary(g => g.Key, g => g.Count())
@@ -143,13 +162,44 @@ namespace PMHUB.Application.Services
 
         private static decimal CalculateAverageEffectiveness(IEnumerable<Project> projects)
         {
-            var projectList = projects.ToList();
-            if (!projectList.Any())
-            {
-                return 0m;
-            }
+            var scores = projects
+                .Select(CalculateProjectEffectiveness)
+                .ToList();
 
-            return Math.Round(projectList.Average(p => (decimal)p.ProgressPercentage), 2);
+            return scores.Count == 0 ? 0m : Math.Round(scores.Average(), 2);
+        }
+
+        private static decimal CalculateProjectEffectiveness(Project project)
+        {
+            var effectivenessKpi = project.KPIs.FirstOrDefault(k =>
+                string.Equals(k.Name, "Effectiveness", StringComparison.OrdinalIgnoreCase));
+            var rawValue = effectivenessKpi?.CalculatedValue ??
+                (effectivenessKpi?.CurrentValue > 0 ? effectivenessKpi.CurrentValue : project.ProgressPercentage);
+            var target = effectivenessKpi?.TargetValue > 0
+                ? effectivenessKpi.TargetValue
+                : GetDefaultKpiTarget("Effectiveness");
+
+            return CalculateTargetScore(rawValue, target);
+        }
+
+        private static decimal CalculateTargetScore(decimal rawValue, decimal target)
+        {
+            if (rawValue <= 0)
+                return 0m;
+
+            if (target <= 0)
+                return NormalizePercentage(rawValue);
+
+            return NormalizePercentage(rawValue * 100m / target);
+        }
+
+        private static decimal NormalizePercentage(decimal value)
+        {
+            if (value <= 0)
+                return 0m;
+
+            var normalized = value <= 1m ? value * 100m : value;
+            return Math.Round(Math.Min(normalized, 100m), 2);
         }
 
         private static decimal CalculateAverageOtd(IEnumerable<Project> projects)
@@ -301,40 +351,7 @@ namespace PMHUB.Application.Services
                 }
             }
 
-            var incomingMembersByUser = dto.Members
-                .GroupBy(m => m.UserId)
-                .ToDictionary(g => g.Key, g => g.Last());
-
-            var membersToRemove = project.ProjectMembers
-                .Where(pm => !incomingMembersByUser.ContainsKey(pm.UserId))
-                .ToList();
-            foreach (var item in membersToRemove)
-                project.ProjectMembers.Remove(item);
-
-            foreach (var kvp in incomingMembersByUser)
-            {
-                var memberDto = kvp.Value;
-                await (_userRepository.GetByIdAsync(memberDto.UserId)
-                    ?? throw new NotFoundException("User", memberDto.UserId));
-                await (_roleRepository.GetByIdAsync(memberDto.RoleId)
-                    ?? throw new NotFoundException("Role", memberDto.RoleId));
-
-                var existingMember = project.ProjectMembers.FirstOrDefault(pm => pm.UserId == memberDto.UserId);
-                if (existingMember is null)
-                {
-                    project.ProjectMembers.Add(new ProjectMember
-                    {
-                        UserId = memberDto.UserId,
-                        RoleId = memberDto.RoleId,
-                        JoinedAt = DateTime.UtcNow
-                    });
-                }
-                else if (existingMember.RoleId != memberDto.RoleId)
-                {
-                    existingMember.RoleId = memberDto.RoleId;
-                    existingMember.UpdatedAt = DateTime.UtcNow;
-                }
-            }
+            await SyncMembersAsync(project, GetProjectMembers(dto));
 
             var incomingCriteriaByType = dto.StrategicCriteria
                 .GroupBy(sc => sc.Type)
@@ -368,6 +385,24 @@ namespace PMHUB.Application.Services
                 }
             }
 
+            var incomingResources = GetProjectResources(dto).ToList();
+            foreach (var item in project.ProjectResources.ToList())
+                project.ProjectResources.Remove(item);
+
+            foreach (var resourceDto in incomingResources)
+            {
+                project.ProjectResources.Add(new ProjectResource
+                {
+                    ItemName = resourceDto.ItemName,
+                    PricePerUnit = resourceDto.PricePerUnit,
+                    Quantity = resourceDto.Quantity,
+                    CostCenter = resourceDto.CostCenter,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            SyncKpis(project, dto.KPIs, includeDefaults: true);
+
             try
             {
                 await _projectRepository.SaveChangesAsync();
@@ -388,17 +423,56 @@ namespace PMHUB.Application.Services
         // ── PATCH ─────────────────────────────────────────────
         public async Task<ProjectDto> PatchAsync(Guid id, PatchProjectDto dto)
         {
-            var project = await _projectRepository.GetByIdAsync(id)
+            var project = await _projectRepository.GetByIdForUpdateAsync(id)
                 ?? throw new NotFoundException("Project", id);
+
+            if (!string.IsNullOrWhiteSpace(dto.Name))
+            {
+                var targetDepartmentId = dto.DepartmentId ?? project.DepartmentId;
+                var existing = await _projectRepository.FindAsync(
+                    p => p.Name == dto.Name && p.DepartmentId == targetDepartmentId && p.Id != id);
+                if (existing.Any())
+                    throw new ConflictException("Project", dto.Name);
+
+                project.Name = dto.Name;
+            }
+
+            if (dto.Description is not null)
+                project.Description = dto.Description;
+
+            if (dto.DepartmentId.HasValue)
+            {
+                await (_departmentRepository.GetByIdAsync(dto.DepartmentId.Value)
+                    ?? throw new NotFoundException("Department", dto.DepartmentId.Value));
+                project.DepartmentId = dto.DepartmentId.Value;
+            }
 
             if (dto.Status.HasValue)
                 project.Status = dto.Status.Value;
 
+            if (dto.Phase.HasValue)
+                project.Phase = dto.Phase.Value;
+
+            ProjectValidator.ValidatePhaseStatus(project.Phase, project.Status);
+
             if (dto.ProcessStatus.HasValue)
                 project.ProcessStatus = dto.ProcessStatus.Value;
 
+            if (dto.ProjectManagementType.HasValue)
+                project.ProjectManagementType = dto.ProjectManagementType.Value;
+
             if (dto.ProjectType.HasValue)
                 project.ProjectType = dto.ProjectType.Value;
+
+            if (dto.ParentProjectId.HasValue)
+            {
+                if (dto.ParentProjectId.Value == id)
+                    throw new BadRequestException("A project cannot reference itself as its parent project.");
+
+                await (_projectRepository.GetByIdAsync(dto.ParentProjectId.Value)
+                    ?? throw new NotFoundException("ParentProject", dto.ParentProjectId.Value));
+                project.ParentProjectId = dto.ParentProjectId.Value;
+            }
 
             if (dto.CurrentState is not null)
                 project.CurrentState = dto.CurrentState;
@@ -409,14 +483,32 @@ namespace PMHUB.Application.Services
             if (dto.Enhancements is not null)
                 project.Enhancements = dto.Enhancements;
 
+            if (dto.StartDate.HasValue)
+                project.StartDate = dto.StartDate.Value;
+
+            if (dto.EndDate.HasValue)
+                project.EndDate = dto.EndDate.Value;
+
             if (dto.EstimatedDueDate.HasValue)
                 project.EstimatedDueDate = dto.EstimatedDueDate.Value;
+
+            if (project.EndDate.HasValue && project.EndDate <= project.StartDate)
+                throw new BadRequestException("The project end date must be greater than the project start date.");
+
+            if (project.EstimatedDueDate.HasValue && project.EstimatedDueDate <= project.StartDate)
+                throw new BadRequestException("The estimated due date must be greater than the project start date.");
 
             if (dto.Budget.HasValue)
                 project.Budget = dto.Budget.Value;
 
             if (dto.CostSaving.HasValue)
                 project.CostSaving = dto.CostSaving.Value;
+
+            if (dto.EstimatedHours.HasValue)
+                project.EstimatedHours = dto.EstimatedHours.Value;
+
+            if (dto.ActualHours.HasValue)
+                project.ActualHours = dto.ActualHours.Value;
 
             if (dto.Sponsor is not null)
                 project.Sponsor = dto.Sponsor;
@@ -438,11 +530,41 @@ namespace PMHUB.Application.Services
             if (dto.ServerHostName is not null)
                 project.ServerHostName = dto.ServerHostName;
 
+            if (dto.CostCenter is not null)
+                project.CostCenter = dto.CostCenter;
+
+            if (dto.ProgressPercentage.HasValue)
+                project.ProgressPercentage = Math.Clamp(dto.ProgressPercentage.Value, 0, 100);
+
+            if (dto.BusinessUnitIds is not null)
+                await SyncBusinessUnitsAsync(project, dto.BusinessUnitIds);
+
+            if (dto.TechnologyIds is not null)
+                await SyncTechnologiesAsync(project, dto.TechnologyIds);
+
+            if (dto.SolutionDomainIds is not null)
+                await SyncSolutionDomainsAsync(project, dto.SolutionDomainIds);
+
+            if (dto.Members is not null || dto.TeamMembers is not null)
+                await SyncMembersAsync(project, GetProjectMembers(dto));
+            else
+                await RemoveProjectManagerFromTeamMembersAsync(project);
+
+            if (dto.StrategicCriteria is not null)
+                SyncStrategicCriteria(project, dto.StrategicCriteria);
+
+            if (dto.ProjectResources is not null || dto.BudgetItems is not null)
+                SyncProjectResources(project, GetProjectResources(dto));
+
+            if (dto.KPIs is not null)
+                SyncKpis(project, dto.KPIs, includeDefaults: true);
+
             project.UpdatedAt = DateTime.UtcNow;
 
             _projectRepository.Update(project);
             await _projectRepository.SaveChangesAsync();
-            await RecalculateProjectActualHoursAndProgressAsync(id);
+            if (!dto.ActualHours.HasValue && !dto.ProgressPercentage.HasValue)
+                await RecalculateProjectActualHoursAndProgressAsync(id);
 
             var updated = await _projectRepository.GetByIdWithIncludesAsync(id);
             var department = await _departmentRepository.GetByIdAsync(updated!.DepartmentId);
@@ -556,8 +678,11 @@ namespace PMHUB.Application.Services
             await (_userRepository.GetByIdAsync(userId)
                 ?? throw new NotFoundException("User", userId));
 
-             await (_roleRepository.GetByIdAsync(roleId)
+              await (_roleRepository.GetByIdAsync(roleId)
                 ?? throw new NotFoundException("Role", roleId));
+
+            if (project.ProjectManagerId.HasValue && project.ProjectManagerId.Value == userId)
+                throw new BadRequestException("The project manager must not be added as a team member.");
 
             if (project.ProjectMembers.Any(m => m.UserId == userId))
                 throw new ConflictException("Member", userId);
@@ -579,6 +704,7 @@ namespace PMHUB.Application.Services
                 ?? throw new NotFoundException("Project", projectId);
 
             return project.ProjectMembers
+                .Where(pm => !project.ProjectManagerId.HasValue || pm.UserId != project.ProjectManagerId.Value)
                 .OrderBy(pm => pm.User.FirstName)
                 .ThenBy(pm => pm.User.LastName)
                 .Select(pm => new ProjectMemberDto
@@ -1127,34 +1253,42 @@ namespace PMHUB.Application.Services
             await RecalculateInternAllocationHoursWorkedAsync(allocationId);
         }
         // ── HELPERS PRIVÉS ────────────────────────────────────
-        private static Project BuildProject(CreateFullProjectDto dto) => new()
+        private static Project BuildProject(
+            CreateFullProjectDto dto,
+            Guid departmentId,
+            Category projectManagementType,
+            ProjectType projectType) => new()
         {
             Name = dto.Name,
             Description = dto.Description,
-            DepartmentId = dto.DepartmentId.Value,
-            Budget = dto.Budget.Value,
-            StartDate = dto.StartDate.Value,
-            EndDate = dto.EndDate,
-            EstimatedDueDate = dto.EstimatedDueDate,
+            DepartmentId = departmentId,
+            Budget = 0m,
+            StartDate = DateTime.UtcNow.Date,
+            EndDate = null,
+            EstimatedDueDate = null,
             Phase = dto.Phase,
             Status = dto.Status,
-            ProcessStatus = dto.ProcessStatus,
-            ProjectManagementType = dto.ProjectManagementType.Value,
-            ProjectType = dto.ProjectType.Value,
-            ParentProjectId = dto.ParentProjectId,
+            ProcessStatus = projectType == ProjectType.NewProcessProject
+                ? dto.ProcessStatus
+                : ProcessStatus.NotStarted,
+            ProjectManagementType = projectManagementType,
+            ProjectType = projectType,
+            ParentProjectId = UsesParentProject(projectType)
+                ? dto.ParentProjectId
+                : null,
             ProjectManagerId = dto.ProjectManagerId,
             Sponsor = dto.Sponsor,
-            DigitalContribution = dto.DigitalContribution,
+            DigitalContribution = 0m,
             CostCenter = dto.CostCenter,
             CostSaving = dto.CostSaving,
             ProgressPercentage = 0,
-            CodeSourceLink = dto.CodeSourceLink,
-            SolutionLink = dto.SolutionLink,
-            ServerHostName = dto.ServerHostName,
-            CurrentState = dto.CurrentState,
-            NextSteps = dto.NextSteps,
-            Enhancements = dto.Enhancements,
-            EstimatedHours = dto.EstimatedHours,
+            CodeSourceLink = null,
+            SolutionLink = null,
+            ServerHostName = null,
+            CurrentState = null,
+            NextSteps = null,
+            Enhancements = null,
+            EstimatedHours = 0m,
             ActualHours = 0,
             CreatedAt = DateTime.UtcNow
         };
@@ -1169,23 +1303,7 @@ namespace PMHUB.Application.Services
                     new ProjectBusinessUnit { BusinessUnitId = buId });
             }
 
-            foreach (var techId in dto.TechnologyIds)
-            {
-                await (_technologyRepository.GetByIdAsync(techId)
-                    ?? throw new NotFoundException("Technology", techId));
-                project.ProjectTechnologies.Add(
-                    new ProjectTechnology { TechnologyId = techId });
-            }
-
-            foreach (var sdId in dto.SolutionDomainIds)
-            {
-                await (_solutionDomainRepository.GetByIdAsync(sdId)
-                    ?? throw new NotFoundException("SolutionDomain", sdId));
-                project.ProjectSolutionDomains.Add(
-                    new ProjectSolutionDomain { SolutionDomainId = sdId });
-            }
-
-            foreach (var memberDto in dto.Members)
+            foreach (var memberDto in NormalizeProjectMembers(GetProjectMembers(dto), project.ProjectManagerId))
             {
                 await (_userRepository.GetByIdAsync(memberDto.UserId)
                     ?? throw new NotFoundException("User", memberDto.UserId));
@@ -1205,22 +1323,271 @@ namespace PMHUB.Application.Services
                 });
             }
 
-            foreach (var kpiDto in dto.KPIs)
-                project.KPIs.Add(new KPI
-                {
-                    ProjectId = project.Id,
-                    Name = kpiDto.Name,
-                    TargetValue = kpiDto.TargetValue,
-                    CurrentValue = kpiDto.CurrentValue,
-                    EstimatedHours = kpiDto.EstimatedHours,
-                    ActualHours = kpiDto.ActualHours,
-                    EstimatedDueDate = kpiDto.EstimatedDueDate,
-                    ActualEndDate = kpiDto.ActualEndDate,
-                    Description = kpiDto.Description,
-                    CreatedAt = DateTime.UtcNow
-                });
+            SyncKpis(project, dto.KPIs, includeDefaults: true);
 
-            foreach (var resourceDto in dto.ProjectResources)
+        }
+
+        private static bool UsesParentProject(ProjectType projectType) =>
+            projectType is ProjectType.NewPhase or ProjectType.Extension or ProjectType.Sustain;
+
+        private static IEnumerable<CreateProjectMemberDto> GetProjectMembers(CreateFullProjectDto dto) =>
+            dto.TeamMembers.Any() ? dto.TeamMembers : dto.Members;
+
+        private static IEnumerable<CreateProjectMemberDto> GetProjectMembers(UpdateProjectDto dto) =>
+            dto.TeamMembers.Any() ? dto.TeamMembers : dto.Members;
+
+        private static IEnumerable<CreateProjectMemberDto> GetProjectMembers(PatchProjectDto dto) =>
+            dto.TeamMembers is { Count: > 0 } ? dto.TeamMembers : dto.Members ?? Enumerable.Empty<CreateProjectMemberDto>();
+
+        private static IEnumerable<CreateProjectResourceDto> GetProjectResources(UpdateProjectDto dto) =>
+            dto.BudgetItems.Any() ? dto.BudgetItems : dto.ProjectResources;
+
+        private static IEnumerable<CreateProjectResourceDto> GetProjectResources(PatchProjectDto dto) =>
+            dto.BudgetItems is { Count: > 0 } ? dto.BudgetItems : dto.ProjectResources ?? Enumerable.Empty<CreateProjectResourceDto>();
+
+        private static IReadOnlyDictionary<string, decimal> DefaultKpiTargets { get; } =
+            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["OTD"] = 85m,
+                ["Effectiveness"] = 85m,
+                ["CSA"] = 85m,
+                ["MonthlyWorkingHours"] = 161.5m
+            };
+
+        private static void SyncKpis(Project project, IEnumerable<CreateKpiDto>? kpis, bool includeDefaults)
+        {
+            var incomingByName = (kpis ?? Enumerable.Empty<CreateKpiDto>())
+                .Where(k => !string.IsNullOrWhiteSpace(k.Name))
+                .GroupBy(k => k.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Last(), StringComparer.OrdinalIgnoreCase);
+
+            if (includeDefaults)
+            {
+                foreach (var defaultKpi in DefaultKpiTargets)
+                {
+                    incomingByName.TryAdd(defaultKpi.Key, new CreateKpiDto
+                    {
+                        Name = defaultKpi.Key,
+                        TargetValue = defaultKpi.Value
+                    });
+                }
+            }
+
+            foreach (var item in project.KPIs.Where(k => !incomingByName.ContainsKey(k.Name)).ToList())
+                project.KPIs.Remove(item);
+
+            foreach (var kvp in incomingByName)
+            {
+                var kpiDto = kvp.Value;
+                var name = kvp.Key;
+                var targetValue = kpiDto.TargetValue > 0
+                    ? kpiDto.TargetValue
+                    : GetDefaultKpiTarget(name);
+
+                var existingKpi = project.KPIs.FirstOrDefault(k =>
+                    string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
+
+                if (existingKpi is null)
+                {
+                    project.KPIs.Add(new KPI
+                    {
+                        Name = name,
+                        TargetValue = targetValue,
+                        CurrentValue = kpiDto.CurrentValue,
+                        EstimatedDueDate = kpiDto.EstimatedDueDate,
+                        ActualEndDate = kpiDto.ActualEndDate,
+                        EstimatedHours = kpiDto.EstimatedHours,
+                        ActualHours = kpiDto.ActualHours,
+                        Description = kpiDto.Description,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    existingKpi.Name = name;
+                    existingKpi.TargetValue = targetValue;
+                    existingKpi.CurrentValue = kpiDto.CurrentValue;
+                    existingKpi.EstimatedDueDate = kpiDto.EstimatedDueDate;
+                    existingKpi.ActualEndDate = kpiDto.ActualEndDate;
+                    existingKpi.EstimatedHours = kpiDto.EstimatedHours;
+                    existingKpi.ActualHours = kpiDto.ActualHours;
+                    existingKpi.Description = kpiDto.Description;
+                    existingKpi.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+        }
+
+        private static decimal GetDefaultKpiTarget(string name)
+        {
+            return string.Equals(name, "CSAT", StringComparison.OrdinalIgnoreCase)
+                ? DefaultKpiTargets.GetValueOrDefault("CSA", 0m)
+                : DefaultKpiTargets.GetValueOrDefault(name, 0m);
+        }
+
+        private async Task SyncBusinessUnitsAsync(Project project, IEnumerable<Guid> businessUnitIds)
+        {
+            var incomingIds = businessUnitIds.ToHashSet();
+            foreach (var item in project.ProjectBusinessUnits.Where(pbu => !incomingIds.Contains(pbu.BusinessUnitId)).ToList())
+                project.ProjectBusinessUnits.Remove(item);
+
+            foreach (var businessUnitId in incomingIds)
+            {
+                await (_businessUnitRepository.GetByIdAsync(businessUnitId)
+                    ?? throw new NotFoundException("BusinessUnit", businessUnitId));
+
+                if (!project.ProjectBusinessUnits.Any(pbu => pbu.BusinessUnitId == businessUnitId))
+                    project.ProjectBusinessUnits.Add(new ProjectBusinessUnit { BusinessUnitId = businessUnitId });
+            }
+        }
+
+        private async Task SyncTechnologiesAsync(Project project, IEnumerable<Guid> technologyIds)
+        {
+            var incomingIds = technologyIds.ToHashSet();
+            foreach (var item in project.ProjectTechnologies.Where(pt => !incomingIds.Contains(pt.TechnologyId)).ToList())
+                project.ProjectTechnologies.Remove(item);
+
+            foreach (var technologyId in incomingIds)
+            {
+                await (_technologyRepository.GetByIdAsync(technologyId)
+                    ?? throw new NotFoundException("Technology", technologyId));
+
+                if (!project.ProjectTechnologies.Any(pt => pt.TechnologyId == technologyId))
+                    project.ProjectTechnologies.Add(new ProjectTechnology { TechnologyId = technologyId });
+            }
+        }
+
+        private async Task SyncSolutionDomainsAsync(Project project, IEnumerable<Guid> solutionDomainIds)
+        {
+            var incomingIds = solutionDomainIds.ToHashSet();
+            foreach (var item in project.ProjectSolutionDomains.Where(psd => !incomingIds.Contains(psd.SolutionDomainId)).ToList())
+                project.ProjectSolutionDomains.Remove(item);
+
+            foreach (var solutionDomainId in incomingIds)
+            {
+                await (_solutionDomainRepository.GetByIdAsync(solutionDomainId)
+                    ?? throw new NotFoundException("SolutionDomain", solutionDomainId));
+
+                if (!project.ProjectSolutionDomains.Any(psd => psd.SolutionDomainId == solutionDomainId))
+                    project.ProjectSolutionDomains.Add(new ProjectSolutionDomain { SolutionDomainId = solutionDomainId });
+            }
+        }
+
+        private async Task SyncMembersAsync(Project project, IEnumerable<CreateProjectMemberDto> members)
+        {
+            var normalizedMembers = NormalizeProjectMembers(members, project.ProjectManagerId);
+            var incomingMembersByUser = normalizedMembers
+                .GroupBy(m => m.UserId)
+                .ToDictionary(g => g.Key, g => g.Last());
+
+            foreach (var item in project.ProjectMembers.Where(pm => !incomingMembersByUser.ContainsKey(pm.UserId)).ToList())
+                project.ProjectMembers.Remove(item);
+
+            foreach (var kvp in incomingMembersByUser)
+            {
+                var memberDto = kvp.Value;
+                await (_userRepository.GetByIdAsync(memberDto.UserId)
+                    ?? throw new NotFoundException("User", memberDto.UserId));
+                await (_roleRepository.GetByIdAsync(memberDto.RoleId)
+                    ?? throw new NotFoundException("Role", memberDto.RoleId));
+
+                var existingMember = project.ProjectMembers.FirstOrDefault(pm => pm.UserId == memberDto.UserId);
+                if (existingMember is null)
+                {
+                    project.ProjectMembers.Add(new ProjectMember
+                    {
+                        UserId = memberDto.UserId,
+                        RoleId = memberDto.RoleId,
+                        JoinedAt = DateTime.UtcNow
+                    });
+                }
+                else if (existingMember.RoleId != memberDto.RoleId)
+                {
+                    existingMember.RoleId = memberDto.RoleId;
+                    existingMember.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await RemoveProjectManagerFromTeamMembersAsync(project);
+        }
+
+        private static List<CreateProjectMemberDto> NormalizeProjectMembers(
+            IEnumerable<CreateProjectMemberDto> members,
+            Guid? projectManagerId)
+        {
+            var memberList = members.ToList();
+
+            if (projectManagerId.HasValue && memberList.Any(m => m.UserId == projectManagerId.Value))
+                throw new BadRequestException("The project manager must not be included as a team member.");
+
+            return memberList;
+        }
+
+        private async Task RemoveProjectManagerFromTeamMembersAsync(Project project)
+        {
+            if (!project.ProjectManagerId.HasValue)
+                return;
+
+            var projectManagerMember = project.ProjectMembers
+                .FirstOrDefault(pm => pm.UserId == project.ProjectManagerId.Value);
+
+            if (projectManagerMember is null)
+                return;
+
+            var tasksAssignedToProjectManagerMember = await _deliverableTaskRepository.FindAsync(
+                t => t.ProjectMemberId == projectManagerMember.Id);
+
+            foreach (var task in tasksAssignedToProjectManagerMember)
+            {
+                task.ProjectMemberId = null;
+                task.UpdatedAt = DateTime.UtcNow;
+                _deliverableTaskRepository.Update(task);
+            }
+
+            if (tasksAssignedToProjectManagerMember.Any())
+                await _deliverableTaskRepository.SaveChangesAsync();
+
+            project.ProjectMembers.Remove(projectManagerMember);
+        }
+
+        private static void SyncStrategicCriteria(Project project, IEnumerable<CreateStrategicCriterionDto> strategicCriteria)
+        {
+            var incomingCriteriaByType = strategicCriteria
+                .GroupBy(sc => sc.Type)
+                .ToDictionary(g => g.Key, g => g.Last());
+
+            foreach (var item in project.StrategicCriteria.Where(sc => !incomingCriteriaByType.ContainsKey(sc.Type)).ToList())
+                project.StrategicCriteria.Remove(item);
+
+            foreach (var kvp in incomingCriteriaByType)
+            {
+                var criterionDto = kvp.Value;
+                var existingCriterion = project.StrategicCriteria.FirstOrDefault(sc => sc.Type == criterionDto.Type);
+                if (existingCriterion is null)
+                {
+                    project.StrategicCriteria.Add(new StrategicCriterion
+                    {
+                        Type = criterionDto.Type,
+                        Score = criterionDto.Score,
+                        Comment = criterionDto.Comment,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    existingCriterion.Score = criterionDto.Score;
+                    existingCriterion.Comment = criterionDto.Comment;
+                    existingCriterion.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+        }
+
+        private static void SyncProjectResources(Project project, IEnumerable<CreateProjectResourceDto> resources)
+        {
+            foreach (var item in project.ProjectResources.ToList())
+                project.ProjectResources.Remove(item);
+
+            foreach (var resourceDto in resources)
+            {
                 project.ProjectResources.Add(new ProjectResource
                 {
                     ItemName = resourceDto.ItemName,
@@ -1229,23 +1596,7 @@ namespace PMHUB.Application.Services
                     CostCenter = resourceDto.CostCenter,
                     CreatedAt = DateTime.UtcNow
                 });
-
-            foreach (var criterionDto in dto.StrategicCriteria)
-            {
-                if (project.StrategicCriteria.Any(sc => sc.Type == criterionDto.Type))
-                    throw new BadRequestException(
-                        $"Le critère '{criterionDto.Type}' est déjà défini pour ce projet.");
-
-                project.StrategicCriteria.Add(new StrategicCriterion
-                {
-                    ProjectId = project.Id,
-                    Type = criterionDto.Type,
-                    Score = criterionDto.Score,
-                    Comment = criterionDto.Comment,
-                    CreatedAt = DateTime.UtcNow
-                });
             }
-
         }
 
         private async Task<Project> GetProjectWithIncludesAsync(Guid projectId)

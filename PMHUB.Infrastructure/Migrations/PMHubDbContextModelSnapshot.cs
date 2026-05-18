@@ -271,6 +271,9 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<int>("AllocationType")
                         .HasColumnType("int");
 
+                    b.Property<int>("Category")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -319,7 +322,7 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<decimal>("ProcessHours")
                         .HasColumnType("decimal(5,2)");
 
-                    b.Property<Guid>("ProjectId")
+                    b.Property<Guid?>("ProjectId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("ProjectType")
@@ -365,9 +368,13 @@ namespace PMHUB.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "Date");
 
+                    b.HasIndex("UserId", "Category", "Date")
+                        .IsUnique()
+                        .HasFilter("[AllocationType] = 0 AND [ProjectId] IS NULL");
+
                     b.HasIndex("UserId", "ProjectId", "Date")
                         .IsUnique()
-                        .HasFilter("[AllocationType] = 0");
+                        .HasFilter("[AllocationType] = 0 AND [ProjectId] IS NOT NULL");
 
                     b.ToTable("HourEntries");
                 });
@@ -1524,8 +1531,7 @@ namespace PMHUB.Infrastructure.Migrations
                     b.HasOne("PMHUB.Domain.Entities.Project", "Project")
                         .WithMany("HourEntries")
                         .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("PMHUB.Domain.Entities.NormalUser", "User")
                         .WithMany("HourEntries")

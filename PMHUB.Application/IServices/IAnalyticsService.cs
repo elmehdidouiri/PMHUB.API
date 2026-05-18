@@ -1,0 +1,13 @@
+using PMHUB.Application.DTOs;
+
+namespace PMHUB.Application.IServices
+{
+    public interface IAnalyticsService
+    {
+        Task<AnalyticsDashboardDto> GetDashboardAsync(AnalyticsQueryDto query);
+        Task<AnalyticsFiltersDto> GetFiltersAsync();
+        Task<AnalyticsSummaryDto> GetSummaryAsync(AnalyticsQueryDto query);
+        Task<AnalyticsKpisDto> GetKpisAsync(AnalyticsQueryDto query);
+        Task<AnalyticsHoursDto> GetHoursAsync(AnalyticsQueryDto query);
+    }
+}

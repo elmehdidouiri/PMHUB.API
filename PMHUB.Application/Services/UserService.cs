@@ -13,15 +13,21 @@ namespace PMHUB.Application.Services
     {
         private readonly IUserRepository _userRepository;
         private readonly IRepository<Role> _roleRepository;
+        private readonly IRepository<Intern> _internRepository;
+        private readonly IRepository<Project> _projectRepository;
         private readonly ILogger<UserService> _logger;
 
         public UserService(
             IUserRepository userRepository,
             IRepository<Role> roleRepository,
+            IRepository<Intern> internRepository,
+            IRepository<Project> projectRepository,
             ILogger<UserService> logger)
         {
             _userRepository = userRepository;
             _roleRepository = roleRepository;
+            _internRepository = internRepository;
+            _projectRepository = projectRepository;
             _logger = logger;
         }
 
@@ -150,22 +156,18 @@ namespace PMHUB.Application.Services
         // ── DELETE 
         public async Task DeleteUserAsync(Guid userId)
         {
-            _logger.LogInformation("Suppression de l'utilisateur {UserId}", userId);
+            _logger.LogInformation("Désactivation de l'utilisateur {UserId}", userId);
 
              var user = await _userRepository.GetByIdAsync(userId) as NormalUser
                 ?? throw new NotFoundException("User", userId);
 
-            if (user.ProjectMembers.Any())
-            {
-                _logger.LogWarning("Impossible de supprimer l'utilisateur {UserId} car assigné à des projets", userId);
-                throw new BadRequestException(
-                    "Impossible de supprimer cet utilisateur car il est assigné à des projets actifs.");
-            }
+            user.IsActive = false;
+            user.UpdatedAt = DateTime.UtcNow;
 
-            _userRepository.Remove(user);
+            _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
 
-            _logger.LogInformation("Utilisateur {UserId} supprimé avec succès", userId);
+            _logger.LogInformation("Utilisateur {UserId} désactivé avec succès", userId);
         }
 
         // ── APPROVE 

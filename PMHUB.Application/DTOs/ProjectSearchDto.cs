@@ -11,5 +11,7 @@ namespace PMHUB.Application.DTOs
         public Guid? DepartmentId { get; set; }
         public Guid? BusinessUnitId { get; set; }
         public Guid? ProjectManagerId { get; set; }
+        public Guid? UserId { get; set; }
+        public Guid? InternId { get; set; }
     }
 }

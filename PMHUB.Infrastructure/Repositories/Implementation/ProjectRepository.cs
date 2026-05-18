@@ -81,6 +81,8 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(p => p.ProjectTechnologies)
                 .Include(p => p.ProjectSolutionDomains)
                 .Include(p => p.ProjectMembers)
+                .Include(p => p.ProjectResources)
+                .Include(p => p.KPIs)
                 .Include(p => p.StrategicCriteria);
 
         public async Task<Project?> GetByNameAsync(string name) =>
@@ -205,6 +207,19 @@ namespace PMHUB.Infrastructure.Repositories
 
             if (query.ProjectManagerId.HasValue)
                 queryable = queryable.Where(p => p.ProjectManagerId == query.ProjectManagerId.Value);
+
+            if (query.UserId.HasValue)
+            {
+                queryable = queryable.Where(p => 
+                    p.ProjectManagerId == query.UserId.Value || 
+                    p.ProjectMembers.Any(m => m.UserId == query.UserId.Value));
+            }
+
+            if (query.InternId.HasValue)
+            {
+                queryable = queryable.Where(p => 
+                    p.InternAllocations.Any(ia => ia.InternId == query.InternId.Value));
+            }
 
             queryable = query.SortBy?.ToLower() switch
             {

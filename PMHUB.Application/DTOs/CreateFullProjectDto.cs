@@ -1,6 +1,7 @@
 using PMHUB.Application.DTOs;
 using PMHUB.Domain.Enums;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 public class CreateFullProjectDto
 {
@@ -14,11 +15,9 @@ public class CreateFullProjectDto
     [Required(ErrorMessage = "Department is required.")]
     public Guid? DepartmentId { get; set; }
 
-    [Required(ErrorMessage = "Budget is required.")]
     [Range(0, double.MaxValue)]
     public decimal? Budget { get; set; }
 
-    [Required(ErrorMessage = "Start date is required.")]
     public DateTime? StartDate { get; set; }
     public Guid? ProjectManagerId { get; set; }
 
@@ -52,7 +51,7 @@ public class CreateFullProjectDto
     public string? ServerHostName { get; set; }
 
     [Required(ErrorMessage = "Project management type is required.")]
-    public ProjectManagementType? ProjectManagementType { get; set; }
+    public Category? ProjectManagementType { get; set; }
 
     [Required(ErrorMessage = "Project type is required.")]
     public ProjectType? ProjectType { get; set; }
@@ -77,6 +76,11 @@ public class CreateFullProjectDto
     public ICollection<Guid> SolutionDomainIds { get; set; } = new List<Guid>();
     public ICollection<CreateProjectMemberDto> Members { get; set; }
         = new List<CreateProjectMemberDto>();
+
+    [JsonPropertyName("teamMembers")]
+    public ICollection<CreateProjectMemberDto> TeamMembers { get; set; }
+        = new List<CreateProjectMemberDto>();
+
     public ICollection<CreateProjectResourceDto> ProjectResources { get; set; } = new List<CreateProjectResourceDto>();
     public ICollection<CreateStrategicCriterionDto> StrategicCriteria { get; set; } = new List<CreateStrategicCriterionDto>();
      public ICollection<CreateKpiDto> KPIs { get; set; } = new List<CreateKpiDto>();

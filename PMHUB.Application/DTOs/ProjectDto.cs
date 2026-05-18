@@ -31,6 +31,9 @@ namespace PMHUB.Application.DTOs
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
+        public bool IsDelayed => EstimatedDueDate.HasValue &&
+            EstimatedDueDate.Value.Date < DateTime.UtcNow.Date &&
+            Status != ProjectStatus.Done;
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
@@ -48,7 +51,7 @@ namespace PMHUB.Application.DTOs
         public string? CodeSourceLink { get; set; }
         public string? SolutionLink { get; set; }
         public string? ServerHostName { get; set; }
-        public ProjectManagementType ProjectManagementType { get; set; }
+        public Category ProjectManagementType { get; set; }
         public string ProjectManagementTypeLabel => ProjectManagementType.ToString();
         public string? CurrentState { get; set; }
         public string? NextSteps { get; set; }

@@ -15,5 +15,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         Task<IEnumerable<HourEntry>> GetByMonthAsync(int year, int month);
         Task<IEnumerable<HourEntry>> GetByUserAsync(Guid userId, int? year = null, int? month = null);
         Task<IEnumerable<HourEntry>> GetByProjectAsync(Guid projectId, int? year = null, int? month = null);
+        Task<HashSet<Guid>> GetUserIdsWithEntriesSinceAsync(DateTime since);
+        Task<DateTime?> GetLastBookingDateAsync(Guid userId);
+        Task<decimal> SumUserHoursAsync(Guid userId, DateTime from, DateTime to);
     }
 }

@@ -278,8 +278,7 @@ namespace PMHUB.Application.Services.Implementation
         {
             _logger.LogInformation("Recuperation des utilisateurs en attente d'approbation");
 
-            var pendingUsers = await _userRepository.FindAsync(
-                u => u is NormalUser && !((NormalUser)u).IsApproved);
+            var pendingUsers = await _userRepository.GetPendingUsersAsync();
 
             return pendingUsers.Select(UserEntityDtoMapper.ToDto);
         }

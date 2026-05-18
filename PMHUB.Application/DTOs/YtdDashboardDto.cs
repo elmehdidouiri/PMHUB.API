@@ -5,7 +5,7 @@ namespace PMHUB.Application.DTOs
     public class YtdDashboardDto
     {
         public int CompanyYear { get; set; }
-        public string FiscalYearLabel => $"{CompanyYear}/{CompanyYear + 1}";
+        public string FiscalYearLabel => $"{CompanyYear - 1}/{CompanyYear}";
 
         public decimal YtdHours { get; set; }
         public decimal ExpectedHours { get; set; }

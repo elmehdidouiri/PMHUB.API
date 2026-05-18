@@ -1,4 +1,4 @@
-﻿using PMHUB.Domain.Entities;
+using PMHUB.Domain.Entities;
 using System.Collections.Generic;
 using Task = System.Threading.Tasks.Task;
 namespace PMHUB.Infrastructure.Repositories
@@ -10,9 +10,12 @@ namespace PMHUB.Infrastructure.Repositories
         Task<IEnumerable<User>> GetAllWithRoleAsync();
         Task<IEnumerable<NormalUser>> GetByRoleIdAsync(Guid roleId);
         Task<IEnumerable<NormalUser>> GetPendingUsersAsync();
+        Task<IEnumerable<NormalUser>> GetActiveApprovedNormalUsersAsync();
         Task<NormalUser?> GetNormalUserByIdAsync(Guid id);
 
         /// <summary>Loads user by id with role for NormalUser (auth / refresh flows).</summary>
         Task<User?> GetByIdForAuthAsync(Guid id);
+
+        Task<NormalUser?> GetWithDependenciesAsync(Guid id);
     }
 }

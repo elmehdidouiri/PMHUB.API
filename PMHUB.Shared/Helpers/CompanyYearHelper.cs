@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,15 +9,15 @@ namespace PMHUB.Shared.Helpers
     public static class CompanyYearHelper
     {
         public static DateTime GetCompanyYearStart(int companyYear) =>
-            new DateTime(companyYear, 9, 1);
+            new DateTime(companyYear - 1, 10, 1);
 
         public static DateTime GetCompanyYearEnd(int companyYear) =>
-            new DateTime(companyYear + 1, 8, 31);
+            new DateTime(companyYear, 9, 30);
 
         public static int GetCurrentCompanyYear(DateTime? today = null)
         {
             var currentDate = today?.Date ?? DateTime.Today;
-            return currentDate.Month >= 9 ? currentDate.Year : currentDate.Year - 1;
+            return currentDate.Month >= 10 ? currentDate.Year + 1 : currentDate.Year;
         }
 
         public static int ResolveCompanyYear(int? companyYear, DateTime? today = null)
@@ -27,11 +27,6 @@ namespace PMHUB.Shared.Helpers
             if (!companyYear.HasValue)
             {
                 return GetCurrentCompanyYear(currentDate);
-            }
-
-            if (companyYear.Value == currentDate.Year && currentDate.Month < 9)
-            {
-                return companyYear.Value - 1;
             }
 
             return companyYear.Value;
