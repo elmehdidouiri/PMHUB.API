@@ -29,6 +29,23 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<IEnumerable<AdminHourBookingNotificationDto>>.Ok(notifications));
         }
 
+        [HttpGet("~/api/admin/inactive-user-notifications")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<AdminHourBookingNotificationDto>>>> GetInactiveUserNotifications(CancellationToken cancellationToken)
+        {
+            var notifications = await _reminderService.GetUsersWithoutRecentBookingsAsync(cancellationToken);
+            return Ok(ApiResponse<IEnumerable<AdminHourBookingNotificationDto>>.Ok(notifications));
+        }
+
+        [HttpGet("~/api/admin/monthly-target-notifications")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<AdminMonthlyTargetNotificationDto>>>> GetMonthlyTargetNotifications(
+            [FromQuery] int? year,
+            [FromQuery] int? month,
+            CancellationToken cancellationToken)
+        {
+            var notifications = await _reminderService.GetUsersBelowMonthlyTargetAsync(year, month, cancellationToken);
+            return Ok(ApiResponse<IEnumerable<AdminMonthlyTargetNotificationDto>>.Ok(notifications));
+        }
+
         [HttpPost("{userId:guid}/send-reminder")]
         public async Task<ActionResult<ApiResponse>> SendSupervisorReminder(Guid userId, CancellationToken cancellationToken)
         {

@@ -20,7 +20,7 @@ namespace PMHUB.Application.DTOs
         public int PageSize
         {
             get => _pageSize;
-            set => _pageSize = value < 1 ? 10 : value > 50 ? 50 : value;
+            set => _pageSize = value < 1 ? 10 : value > 100 ? 100 : value;
         }
 
         public string? Search { get; set; }

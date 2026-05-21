@@ -11,6 +11,7 @@ namespace PMHUB.Application.IServices
         //        Task ApproveUserAsync(ApproveUserDto dto);
         Task<UserDto> GetByIdAsync(Guid id);
         Task<IEnumerable<UserDto>> GetAllAsync();
+        Task<IEnumerable<UserDto>> GetTeamMemberCandidatesAsync();
         Task<IEnumerable<UserDto>> GetByRoleIdAsync(Guid roleId);
         Task UpdateUserAsync(UpdateUserDto dto); 
         Task DeleteUserAsync(Guid userId);

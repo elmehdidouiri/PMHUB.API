@@ -1,10 +1,13 @@
 using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
+using PMHUB.Domain.Enums;
 
 namespace PMHUB.Application.Mappings
 {
     public static class ProjectMapper
     {
+        private sealed record CompletionField(string Label, bool IsCompleted);
+
         public static ProjectDto ToDto(Project p, Department? department) => new()
         {
             Id = p.Id,
@@ -41,10 +44,20 @@ namespace PMHUB.Application.Mappings
             CreatedAt = p.CreatedAt,
             UpdatedAt = p.UpdatedAt,
             DepartmentId = p.DepartmentId,
-            DepartmentName = p.Department?.Name ?? department?.Name ?? string.Empty,
-            PlantName = p.Department?.Plant?.Name
-                ?? department?.Plant?.Name
-                ?? string.Empty,
+            DepartmentIds = GetProjectDepartments(p, department)
+                .Select(d => d.Id)
+                .ToList(),
+            DepartmentName = string.Join(", ", GetProjectDepartments(p, department)
+                .Select(d => d.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct()),
+            Departments = GetProjectDepartments(p, department)
+                .Select(ToDepartmentDto)
+                .ToList(),
+            PlantName = string.Join(", ", GetProjectDepartments(p, department)
+                .Select(d => d.Plant?.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct()),
             ParentProjectId = p.ParentProjectId,
             ParentProjectName = p.ParentProject?.Name,
             BusinessUnits = p.ProjectBusinessUnits
@@ -121,27 +134,129 @@ namespace PMHUB.Application.Mappings
             SubProjects = p.SubProjects.Select(ToSummaryDto).ToList()
         };
 
-        public static ProjectSummaryDto ToSummaryDto(Project p) => new()
+        public static ProjectSummaryDto ToSummaryDto(Project p)
         {
-            Id = p.Id,
-            Name = p.Name,
-            Status = p.Status.ToString(),
-            Phase = p.Phase.ToString(),
-            ProjectManagementType = p.ProjectManagementType,
-            ProjectType = p.ProjectType.ToString(),
-            StartDate = p.StartDate,
-            EndDate = p.EndDate,
-            ProgressPercentage = p.ProgressPercentage,
-            IsDelayed = p.EstimatedDueDate.HasValue &&
-                p.EstimatedDueDate.Value.Date < DateTime.UtcNow.Date &&
-                p.Status != PMHUB.Domain.Enums.ProjectStatus.Done,
-            Budget = p.Budget,
-            DepartmentName = p.Department?.Name ?? string.Empty,
-            PlantName = p.Department?.Plant?.Name ?? string.Empty,
-            Sponsor = p.Sponsor ?? string.Empty,
-            EstimatedHours = p.EstimatedHours,
-            ActualHours = p.ActualHours
+            var completionFields = GetCompletionFields(p).ToList();
+            var missingFields = completionFields
+                .Where(f => !f.IsCompleted)
+                .Select(f => f.Label)
+                .ToList();
+
+            return new ProjectSummaryDto
+            {
+                Id = p.Id,
+                Name = p.Name,
+                Status = p.Status.ToString(),
+                Phase = p.Phase.ToString(),
+                ProjectManagementType = p.ProjectManagementType,
+                ProjectType = p.ProjectType.ToString(),
+                StartDate = p.StartDate,
+                EndDate = p.EndDate,
+                EstimatedDueDate = p.EstimatedDueDate,
+                ProgressPercentage = p.ProgressPercentage,
+                IsDelayed = p.EstimatedDueDate.HasValue &&
+                    p.EstimatedDueDate.Value.Date < DateTime.UtcNow.Date &&
+                    p.Status != ProjectStatus.Done,
+                Budget = p.Budget,
+                DepartmentIds = GetProjectDepartments(p, null)
+                    .Select(d => d.Id)
+                    .ToList(),
+                DepartmentName = string.Join(", ", GetProjectDepartments(p, null)
+                    .Select(d => d.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct()),
+                DepartmentNames = GetProjectDepartments(p, null)
+                    .Select(d => d.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct()
+                    .ToList(),
+                PlantName = string.Join(", ", GetProjectDepartments(p, null)
+                    .Select(d => d.Plant?.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct()),
+                Sponsor = p.Sponsor ?? string.Empty,
+                EstimatedHours = p.EstimatedHours,
+                ActualHours = p.ActualHours,
+                IsDataComplete = missingFields.Count == 0,
+                DataCompletionPercentage = CalculateCompletionPercentage(completionFields),
+                MissingFields = missingFields
+            };
+        }
+
+        private static IEnumerable<CompletionField> GetCompletionFields(Project p)
+        {
+            yield return new("Name", HasValue(p.Name));
+            yield return new("Description", HasValue(p.Description));
+            yield return new("Department", p.DepartmentId != Guid.Empty || p.ProjectDepartments.Any());
+            yield return new("Budget", p.Budget > 0);
+            yield return new("StartDate", p.StartDate != default);
+            yield return new("EstimatedDueDate", p.EstimatedDueDate.HasValue);
+            yield return new("EndDate", p.Status != ProjectStatus.Done || p.EndDate.HasValue);
+            yield return new("ProjectManager", p.ProjectManagerId.HasValue);
+            yield return new("Sponsor", HasValue(p.Sponsor));
+            yield return new("DigitalContribution", p.DigitalContribution > 0);
+            yield return new("CostCenter", HasValue(p.CostCenter));
+            yield return new("CostSaving", p.CostSaving > 0);
+            yield return new("CodeSourceLink", HasValue(p.CodeSourceLink));
+            yield return new("SolutionLink", HasValue(p.SolutionLink));
+            yield return new("ServerHostName", HasValue(p.ServerHostName));
+            yield return new("CurrentState", HasValue(p.CurrentState));
+            yield return new("NextSteps", HasValue(p.NextSteps));
+            yield return new("Enhancements", HasValue(p.Enhancements));
+            yield return new("EstimatedHours", p.EstimatedHours > 0);
+            yield return new("BusinessUnits", p.ProjectBusinessUnits.Any());
+            yield return new("Technologies", p.ProjectTechnologies.Any());
+            yield return new("SolutionDomains", p.ProjectSolutionDomains.Any());
+            yield return new("Members", p.ProjectMembers.Any());
+            yield return new("ProjectResources", p.ProjectResources.Any());
+            yield return new("StrategicCriteria", p.StrategicCriteria.Any());
+            yield return new("KPIs", p.KPIs.Any());
+        }
+
+        private static bool HasValue(string? value) =>
+            !string.IsNullOrWhiteSpace(value) &&
+            !string.Equals(value.Trim(), "VIDE", StringComparison.OrdinalIgnoreCase);
+
+        private static IEnumerable<Department> GetProjectDepartments(Project project, Department? fallbackDepartment)
+        {
+            var departments = project.ProjectDepartments
+                .Select(pd => pd.Department)
+                .Where(d => d is not null)
+                .Cast<Department>()
+                .ToList();
+
+            if (departments.Count > 0)
+                return departments;
+
+            if (project.Department is not null)
+                return new[] { project.Department };
+
+            if (fallbackDepartment is not null)
+                return new[] { fallbackDepartment };
+
+            return Enumerable.Empty<Department>();
+        }
+
+        private static DepartmentDto ToDepartmentDto(Department department) => new()
+        {
+            Id = department.Id,
+            Name = department.Name,
+            BusinessUnitId = department.BusinessUnitId,
+            BusinessUnitName = department.BusinessUnit?.Name ?? string.Empty,
+            PlantId = department.PlantId,
+            PlantName = department.Plant?.Name ?? string.Empty,
+            CreatedAt = department.CreatedAt,
+            UpdatedAt = department.UpdatedAt
         };
+
+        private static int CalculateCompletionPercentage(IReadOnlyCollection<CompletionField> fields)
+        {
+            if (fields.Count == 0)
+                return 0;
+
+            var completedCount = fields.Count(f => f.IsCompleted);
+            return (int)Math.Round(completedCount * 100m / fields.Count, MidpointRounding.AwayFromZero);
+        }
     }
 
 }

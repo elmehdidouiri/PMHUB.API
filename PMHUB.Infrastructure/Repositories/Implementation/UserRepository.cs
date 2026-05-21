@@ -35,7 +35,28 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Users
                 .OfType<NormalUser>()
                 .Include(u => u.Role)
-                .Where(u => u.IsActive)
+                .Where(u => u.IsActive &&
+                    u.RoleId.HasValue &&
+                    u.Role != null &&
+                    u.Role.Name.ToLower() != "intern" &&
+                    u.Role.Name.ToLower() != "stagiaire")
+                .AsNoTracking()
+                .ToListAsync();
+
+         public async Task<IEnumerable<NormalUser>> GetTeamMemberCandidatesAsync() =>
+            await _context.Users
+                .OfType<NormalUser>()
+                .Include(u => u.Role)
+                .Where(u => u.IsActive &&
+                    u.IsApproved &&
+                    u.RoleId.HasValue &&
+                    u.Role != null &&
+                    u.Role.Name.ToLower() != "intern" &&
+                    u.Role.Name.ToLower() != "stagiaire" &&
+                    u.Role.Name.ToLower() != "project manager" &&
+                    u.Role.Name.ToLower() != "projectmanager")
+                .OrderBy(u => u.FirstName)
+                .ThenBy(u => u.LastName)
                 .AsNoTracking()
                 .ToListAsync();
 
@@ -59,7 +80,11 @@ namespace PMHUB.Infrastructure.Repositories
             await _context.Users
                 .OfType<NormalUser>()
                 .Include(u => u.Role)
-                .Where(u => u.IsApproved && u.IsActive)
+                .Where(u => u.IsApproved && u.IsActive &&
+                    u.RoleId.HasValue &&
+                    u.Role != null &&
+                    u.Role.Name.ToLower() != "intern" &&
+                    u.Role.Name.ToLower() != "stagiaire")
                 .AsNoTracking()
                 .ToListAsync();
 
@@ -90,6 +115,7 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(u => u.HourEntries)
                 .FirstOrDefaultAsync(u => u.Id == id);
         }
+
     }
 
 }

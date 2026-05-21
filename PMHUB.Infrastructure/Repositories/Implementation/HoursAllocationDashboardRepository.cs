@@ -101,6 +101,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var totalAvailableHours = selectedRows.Select(r => r.UserId).Distinct().Count() * availableHoursPerUser;
             var totalHours = selectedRows.Sum(r => r.TotalHours);
             var ytdHours = ytdRows.Sum(r => r.TotalHours);
+            var details = BuildDetails(selectedRows);
+            var monthlyBreakdown = BuildMonthlyBreakdown(selectedRows, period.Start, period.End);
+            var hoursByUser = BuildHoursByUser(selectedRows, period.Start, period.End, availableHoursPerUser);
+            var hoursByProject = BuildHoursByProject(selectedRows);
+            var hoursByProjectUser = BuildHoursByProjectUser(selectedRows);
+            var hoursByRole = BuildHoursByRole(selectedRows, totalHours);
+            var hoursByTeam = BuildHoursByTeam(selectedRows);
+            var pagination = ApplyPagination(query, ref details, ref hoursByUser, ref hoursByProject, ref hoursByProjectUser, ref hoursByRole, ref hoursByTeam);
 
             return new HoursAllocationDashboardDto
             {
@@ -115,12 +123,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     AverageMonthlyHours = CalculateAverageMonthlyHours(ytdHours, ytdPeriod.Start, ytdPeriod.End),
                     WorkedDays = selectedRows.Select(r => r.Date.Date).Distinct().Count()
                 },
-                Details = BuildDetails(selectedRows),
-                MonthlyBreakdown = BuildMonthlyBreakdown(selectedRows, period.Start, period.End),
-                HoursByUser = BuildHoursByUser(selectedRows, period.Start, period.End, availableHoursPerUser),
-                HoursByProject = BuildHoursByProject(selectedRows),
-                HoursByRole = BuildHoursByRole(selectedRows, totalHours),
-                HoursByTeam = BuildHoursByTeam(selectedRows)
+                Details = details,
+                MonthlyBreakdown = monthlyBreakdown,
+                HoursByUser = hoursByUser,
+                HoursByProject = hoursByProject,
+                HoursByProjectUser = hoursByProjectUser,
+                HoursByRole = hoursByRole,
+                HoursByTeam = hoursByTeam,
+                Pagination = pagination
             };
         }
 
@@ -180,15 +190,28 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     h.Project.ProjectMembers.Any(pm => pm.UserId == h.UserId && pm.RoleId == roleId));
             }
 
+            var search = query.Search?.Trim();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                hoursQuery = hoursQuery.Where(h =>
+                    (h.User.FirstName + " " + h.User.LastName).Contains(search) ||
+                    h.User.Email.Contains(search) ||
+                    h.User.FirstName.Contains(search) ||
+                    h.User.LastName.Contains(search) ||
+                    h.Project != null && h.Project.Name.Contains(search) ||
+                    h.User.Role != null && h.User.Role.Name.Contains(search));
+            }
+
             return hoursQuery
+                .Where(h => h.User.RoleId.HasValue)
                 .OrderByDescending(h => h.Date)
                 .Select(h => new HoursAllocationRow
                 {
                     Date = h.Date,
                     UserId = h.UserId,
                     UserName = (h.User.FirstName + " " + h.User.LastName).Trim(),
-                    RoleId = h.User.RoleId,
-                    Role = h.User.Role.Name,
+                    RoleId = h.User.RoleId!.Value,
+                    Role = h.User.Role != null ? h.User.Role.Name : string.Empty,
                     ProjectId = h.ProjectId,
                     ProjectName = h.Project != null
                         ? h.Project.Name
@@ -217,8 +240,13 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         {
             var usersQuery = _context.Users
                 .OfType<NormalUser>()
+                .Include(u => u.Role)
                 .AsNoTracking()
-                .Where(u => u.IsActive && u.IsApproved);
+                .Where(u => u.IsActive && u.IsApproved &&
+                    u.RoleId.HasValue &&
+                    u.Role != null &&
+                    u.Role.Name.ToLower() != "intern" &&
+                    u.Role.Name.ToLower() != "stagiaire");
 
             if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
                 usersQuery = usersQuery.Where(u => u.Id == query.UserId.Value);
@@ -350,6 +378,42 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 .ToList();
         }
 
+        private static List<HoursAllocationByProjectUserDto> BuildHoursByProjectUser(List<HoursAllocationRow> rows)
+        {
+            return rows
+                .GroupBy(r => new
+                {
+                    r.ProjectId,
+                    r.ProjectName,
+                    r.UserId,
+                    r.UserName,
+                    r.Role,
+                    r.IsProjectManager
+                })
+                .Select(g => new HoursAllocationByProjectUserDto
+                {
+                    ProjectId = g.Key.ProjectId,
+                    ProjectName = g.Key.ProjectName,
+                    UserId = g.Key.UserId,
+                    UserName = g.Key.UserName,
+                    Role = g.Key.Role,
+                    TotalHours = Round(g.Sum(x => x.TotalHours)),
+                    ExecutionHours = Round(g.Sum(x => x.ExecutionHours)),
+                    TechLeadHours = Round(g.Sum(x => x.TechLeadHours)),
+                    ProcessHours = Round(g.Sum(x => x.ProcessHours)),
+                    ProjectManagementHours = Round(g.Sum(x => x.ProjectManagementHours)),
+                    ResearchAndDevHours = Round(g.Sum(x => x.ResearchAndDevHours)),
+                    WorkshopHours = Round(g.Sum(x => x.WorkshopHours)),
+                    OtherHours = Round(g.Sum(x => x.OtherHours)),
+                    WorkedDays = g.Select(x => x.Date.Date).Distinct().Count(),
+                    AllocationCount = g.Count(),
+                    IsProjectManager = g.Key.IsProjectManager
+                })
+                .OrderBy(x => x.ProjectName)
+                .ThenByDescending(x => x.TotalHours)
+                .ToList();
+        }
+
         private static List<HoursAllocationByRoleDto> BuildHoursByRole(List<HoursAllocationRow> rows, decimal totalHours)
         {
             return rows
@@ -382,6 +446,67 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 })
                 .OrderByDescending(x => x.TotalHours)
                 .ToList();
+        }
+
+        private static HoursAllocationPaginationDto ApplyPagination(
+            HoursAllocationDashboardQueryDto query,
+            ref List<HoursAllocationDetailDto> details,
+            ref List<HoursAllocationByUserDto> hoursByUser,
+            ref List<HoursAllocationByProjectDto> hoursByProject,
+            ref List<HoursAllocationByProjectUserDto> hoursByProjectUser,
+            ref List<HoursAllocationByRoleDto> hoursByRole,
+            ref List<HoursAllocationByTeamDto> hoursByTeam)
+        {
+            var table = ResolvePaginatedTable(query.Analysis);
+
+            return table switch
+            {
+                "resourcesCapacity" => PaginateTable(table, query, ref hoursByUser),
+                "projects" => PaginateTable(table, query, ref hoursByProject),
+                "projectUsers" => PaginateTable(table, query, ref hoursByProjectUser),
+                "roles" => PaginateTable(table, query, ref hoursByRole),
+                "team" => PaginateTable(table, query, ref hoursByTeam),
+                _ => PaginateTable(table, query, ref details)
+            };
+        }
+
+        private static string ResolvePaginatedTable(string? analysis)
+        {
+            return analysis?.Trim().ToLowerInvariant() switch
+            {
+                "resourcescapacity" or "resourcecapacity" or "resources" or "users" => "resourcesCapacity",
+                "projects" or "project" => "projects",
+                "projectusers" or "project-users" or "project_users" or "projectuser" or "project-user" or "byprojectuser" or "by-project-user" => "projectUsers",
+                "roles" or "role" => "roles",
+                "team" or "teams" or "members" => "team",
+                "details" or "allocations" => "details",
+                _ => "details"
+            };
+        }
+
+        private static HoursAllocationPaginationDto PaginateTable<T>(
+            string table,
+            HoursAllocationDashboardQueryDto query,
+            ref List<T> items)
+        {
+            var totalCount = items.Count;
+            var pageSize = query.All ? totalCount : query.PageSize;
+
+            if (!query.All)
+            {
+                items = items
+                    .Skip((query.PageNumber - 1) * query.PageSize)
+                    .Take(query.PageSize)
+                    .ToList();
+            }
+
+            return new HoursAllocationPaginationDto
+            {
+                Table = table,
+                PageNumber = query.PageNumber,
+                PageSize = pageSize,
+                TotalCount = totalCount
+            };
         }
 
         private (DateTime Start, DateTime End) ResolveSelectedPeriod(HoursAllocationDashboardQueryDto query)

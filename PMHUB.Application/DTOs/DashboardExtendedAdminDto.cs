@@ -2,14 +2,29 @@ namespace PMHUB.Application.DTOs
 {
     public class DashboardExtendedAdminDto
     {
-        public DashboardSummaryDto Summary { get; set; } = new();
-        public DashboardPortfolioHealthDto PortfolioHealth { get; set; } = new();
-        public DashboardWorkloadDto Workload { get; set; } = new();
-        public DashboardUsersDto Users { get; set; } = new();
-        public DashboardRisksDto Risks { get; set; } = new();
-        public DashboardBusinessDto Business { get; set; } = new();
-        public List<DashboardTopProjectDto> TopProjects { get; set; } = new();
-        public List<DashboardAlertDto> Alerts { get; set; } = new();
+        public DashboardAdminSummaryDto Summary { get; set; } = new();
+        public DashboardExtendedAdminChartsDto Charts { get; set; } = new();
+    }
+
+    public class DashboardAdminSummaryDto
+    {
+        public int TotalProjects { get; set; }
+        public decimal AverageOtd { get; set; }
+        public decimal AverageEffectiveness { get; set; }
+        public int DelayedProjects { get; set; }
+        public int DoneProjectsAboveTarget { get; set; }
+        public int DoneProjectsBelowTarget { get; set; }
+    }
+
+    public class DashboardExtendedAdminChartsDto
+    {
+        public List<DashboardLabelValueDto> DeliveryMetrics { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByBusinessUnit { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByDepartment { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByPlant { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByStatus { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByPhase { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByProjectManagementType { get; set; } = new();
     }
 
     public class DashboardPortfolioHealthDto

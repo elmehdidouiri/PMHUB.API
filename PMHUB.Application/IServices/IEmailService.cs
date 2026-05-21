@@ -20,5 +20,10 @@ namespace PMHUB.Application.IServices
             decimal expectedHours,
             decimal missingHours);
         Task SendSupervisorVisitReminderAsync(string toEmail, string firstName);
+        Task SendInternBookingReminderToSupervisorAsync(
+            string toEmail,
+            string supervisorFirstName,
+            string internName,
+            int daysWithoutBooking);
     }
 }

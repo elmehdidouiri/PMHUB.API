@@ -783,6 +783,21 @@ namespace PMHUB.Infrastructure.Migrations
                     b.ToTable("ProjectBusinessUnits");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.ProjectDepartment", b =>
+                {
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ProjectId", "DepartmentId");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.ToTable("ProjectDepartments");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.ProjectFile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1442,7 +1457,7 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<bool>("IsApproved")
                         .HasColumnType("bit");
 
-                    b.Property<Guid>("RoleId")
+                    b.Property<Guid?>("RoleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasIndex("ApprovedById");
@@ -1690,6 +1705,25 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("PMHUB.Domain.Entities.ProjectDepartment", b =>
+                {
+                    b.HasOne("PMHUB.Domain.Entities.Department", "Department")
+                        .WithMany("ProjectDepartments")
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PMHUB.Domain.Entities.Project", "Project")
+                        .WithMany("ProjectDepartments")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Department");
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("PMHUB.Domain.Entities.ProjectFile", b =>
                 {
                     b.HasOne("PMHUB.Domain.Entities.Project", "Project")
@@ -1908,8 +1942,7 @@ namespace PMHUB.Infrastructure.Migrations
                     b.HasOne("PMHUB.Domain.Entities.Role", "Role")
                         .WithMany("Users")
                         .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("ApprovedBy");
 
@@ -1930,6 +1963,8 @@ namespace PMHUB.Infrastructure.Migrations
 
             modelBuilder.Entity("PMHUB.Domain.Entities.Department", b =>
                 {
+                    b.Navigation("ProjectDepartments");
+
                     b.Navigation("Projects");
                 });
 
@@ -1968,6 +2003,8 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Navigation("KPIs");
 
                     b.Navigation("ProjectBusinessUnits");
+
+                    b.Navigation("ProjectDepartments");
 
                     b.Navigation("ProjectFiles");
 

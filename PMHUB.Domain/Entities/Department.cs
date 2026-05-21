@@ -24,5 +24,6 @@ namespace PMHUB.Domain.Entities
         public Guid PlantId;
         public Plant Plant { get; set; } = null!;
         public ICollection<Project> Projects { get; set; } = new List<Project>();
+        public ICollection<ProjectDepartment> ProjectDepartments { get; set; } = new List<ProjectDepartment>();
     }
 }

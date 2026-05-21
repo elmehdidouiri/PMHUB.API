@@ -77,22 +77,22 @@ namespace PMHUB.Application.Services
         {
             _logger.LogInformation("Création du projet {ProjectName}", dto.Name);
 
-            var departmentId = dto.DepartmentId
-                ?? throw new BadRequestException("Department is required.");
+            ProjectValidator.ValidateForCreate(dto);
+
+            var departmentIds = ResolveDepartmentIds(dto.DepartmentId, dto.DepartmentIds);
+            var primaryDepartmentId = departmentIds.First();
             var projectManagementType = dto.ProjectManagementType
                 ?? throw new BadRequestException("Project management type is required.");
             var projectType = dto.ProjectType
                 ?? throw new BadRequestException("Project type is required.");
 
-            var department = await _departmentRepository.GetByIdAsync(departmentId)
-                ?? throw new NotFoundException("Department", departmentId);
+            var departments = await GetDepartmentsOrThrowAsync(departmentIds);
 
             var existing = await _projectRepository.FindAsync(
-                p => p.Name == dto.Name && p.DepartmentId == departmentId);
+                p => p.Name == dto.Name &&
+                    (departmentIds.Contains(p.DepartmentId) ||
+                     p.ProjectDepartments.Any(pd => departmentIds.Contains(pd.DepartmentId))));
             if (existing.Any()) throw new ConflictException("Project", dto.Name);
-
-            ProjectValidator.ValidateDates(dto);
-            ProjectValidator.ValidatePhaseStatus(dto.Phase, dto.Status);
 
             if (dto.ProjectManagerId.HasValue)
                 await (_userRepository.GetByIdAsync(dto.ProjectManagerId.Value)
@@ -104,9 +104,10 @@ namespace PMHUB.Application.Services
                 ProjectValidator.ValidateManagementType(dto, parentProject);
             }
 
-            var project = BuildProject(dto, departmentId, projectManagementType, projectType);
+            var project = BuildProject(dto, primaryDepartmentId, projectManagementType, projectType);
 
-             await AttachRelationsAsync(project, dto);
+            SyncDepartments(project, departments.Select(d => d.Id));
+            await AttachRelationsAsync(project, dto);
 
             await _projectRepository.AddAsync(project);
             await _projectRepository.SaveChangesAsync();
@@ -117,7 +118,7 @@ namespace PMHUB.Application.Services
             var createdProject = await _projectRepository.GetByIdWithIncludesAsync(project.Id)
                 ?? throw new NotFoundException("Project", project.Id);
 
-            return ProjectMapper.ToDto(createdProject, department);
+            return ProjectMapper.ToDto(createdProject, departments.First());
         }
 
         // ── GET ALL ───────────────────────────────────────────
@@ -227,7 +228,7 @@ namespace PMHUB.Application.Services
             {
                 Data = items.Select(ProjectMapper.ToSummaryDto),
                 PageNumber = query.PageNumber,
-                PageSize = query.PageSize,
+                PageSize = query.All ? totalCount : query.PageSize,
                 TotalCount = totalCount
             };
         }
@@ -245,8 +246,7 @@ namespace PMHUB.Application.Services
             var project = await _projectRepository.GetByIdWithIncludesAsync(id)
                 ?? throw new NotFoundException("Project", id);
 
-            var department = await _departmentRepository.GetByIdAsync(project.DepartmentId);
-            return ProjectMapper.ToDto(project, department);
+            return ProjectMapper.ToDto(project, null);
         }
 
         // ── UPDATE ────────────────────────────────────────────
@@ -257,28 +257,25 @@ namespace PMHUB.Application.Services
             var project = await _projectRepository.GetByIdForUpdateAsync(id)
                 ?? throw new NotFoundException("Project", id);
 
-            var department = await _departmentRepository.GetByIdAsync(dto.DepartmentId.Value)
-                ?? throw new NotFoundException("Department", dto.DepartmentId.Value);
+            ProjectValidator.ValidateForUpdate(id, dto);
+
+            var departmentIds = ResolveDepartmentIds(dto.DepartmentId, dto.DepartmentIds);
+            var departments = await GetDepartmentsOrThrowAsync(departmentIds);
 
             var existing = await _projectRepository.FindAsync(
-                p => p.Name == dto.Name && p.DepartmentId == dto.DepartmentId.Value && p.Id != id);
+                p => p.Name == dto.Name && p.Id != id &&
+                    (departmentIds.Contains(p.DepartmentId) ||
+                     p.ProjectDepartments.Any(pd => departmentIds.Contains(pd.DepartmentId))));
             if (existing.Any())
                 throw new ConflictException("Project", dto.Name);
-
-            ProjectValidator.ValidateDates(dto);
-            ProjectValidator.ValidatePhaseStatus(dto.Phase.Value, dto.Status.Value);
 
              if (dto.ProjectManagerId.HasValue)
                 await (_userRepository.GetByIdAsync(dto.ProjectManagerId.Value)
                     ?? throw new NotFoundException("User", dto.ProjectManagerId.Value));
 
-            if (dto.ParentProjectId.HasValue && dto.ParentProjectId.Value == id)
-                throw new BadRequestException(
-                    "A project cannot reference itself as its parent project.");
-
             project.Name = dto.Name;
             project.Description = dto.Description;
-            project.DepartmentId = dto.DepartmentId.Value;
+            SyncDepartments(project, departmentIds);
             project.Budget = dto.Budget.Value;
             project.StartDate = dto.StartDate.Value;
             project.EndDate = dto.EndDate;
@@ -417,7 +414,7 @@ namespace PMHUB.Application.Services
 
             await RecalculateProjectActualHoursAndProgressAsync(id);
             var updated = await _projectRepository.GetByIdWithIncludesAsync(id);
-            return ProjectMapper.ToDto(updated!, department);
+            return ProjectMapper.ToDto(updated!, departments.First());
         }
 
         // ── PATCH ─────────────────────────────────────────────
@@ -428,9 +425,13 @@ namespace PMHUB.Application.Services
 
             if (!string.IsNullOrWhiteSpace(dto.Name))
             {
-                var targetDepartmentId = dto.DepartmentId ?? project.DepartmentId;
+                var targetDepartmentIds = dto.DepartmentIds is not null || dto.DepartmentId.HasValue
+                    ? ResolveDepartmentIds(dto.DepartmentId, dto.DepartmentIds)
+                    : GetCurrentDepartmentIds(project);
                 var existing = await _projectRepository.FindAsync(
-                    p => p.Name == dto.Name && p.DepartmentId == targetDepartmentId && p.Id != id);
+                    p => p.Name == dto.Name && p.Id != id &&
+                        (targetDepartmentIds.Contains(p.DepartmentId) ||
+                         p.ProjectDepartments.Any(pd => targetDepartmentIds.Contains(pd.DepartmentId))));
                 if (existing.Any())
                     throw new ConflictException("Project", dto.Name);
 
@@ -440,11 +441,11 @@ namespace PMHUB.Application.Services
             if (dto.Description is not null)
                 project.Description = dto.Description;
 
-            if (dto.DepartmentId.HasValue)
+            if (dto.DepartmentIds is not null || dto.DepartmentId.HasValue)
             {
-                await (_departmentRepository.GetByIdAsync(dto.DepartmentId.Value)
-                    ?? throw new NotFoundException("Department", dto.DepartmentId.Value));
-                project.DepartmentId = dto.DepartmentId.Value;
+                var departmentIds = ResolveDepartmentIds(dto.DepartmentId, dto.DepartmentIds);
+                await GetDepartmentsOrThrowAsync(departmentIds);
+                SyncDepartments(project, departmentIds);
             }
 
             if (dto.Status.HasValue)
@@ -561,14 +562,21 @@ namespace PMHUB.Application.Services
 
             project.UpdatedAt = DateTime.UtcNow;
 
-            _projectRepository.Update(project);
-            await _projectRepository.SaveChangesAsync();
+            try
+            {
+                await _projectRepository.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _logger.LogWarning(ex, "Concurrency conflict while patching project {ProjectId}", id);
+                throw new ConflictException("The project was modified or deleted by another operation. Refresh and retry.");
+            }
+
             if (!dto.ActualHours.HasValue && !dto.ProgressPercentage.HasValue)
                 await RecalculateProjectActualHoursAndProgressAsync(id);
 
             var updated = await _projectRepository.GetByIdWithIncludesAsync(id);
-            var department = await _departmentRepository.GetByIdAsync(updated!.DepartmentId);
-            return ProjectMapper.ToDto(updated, department);
+            return ProjectMapper.ToDto(updated!, null);
         }
 
         // ── DELETE ────────────────────────────────────────────
@@ -597,7 +605,8 @@ namespace PMHUB.Application.Services
                 ?? throw new NotFoundException("Department", departmentId));
 
             var projects = await _projectRepository.FindSummariesAsync(
-                p => p.DepartmentId == departmentId);
+                p => p.DepartmentId == departmentId ||
+                     p.ProjectDepartments.Any(pd => pd.DepartmentId == departmentId));
             return projects.Select(ProjectMapper.ToSummaryDto);
         }
 
@@ -615,7 +624,8 @@ namespace PMHUB.Application.Services
         public async Task<IEnumerable<ProjectSummaryDto>> GetByPlantAsync(Guid plantId)
         {
             var projects = await _projectRepository.FindSummariesAsync(
-                p => p.Department != null && p.Department.PlantId == plantId);
+                p => (p.Department != null && p.Department.PlantId == plantId) ||
+                     p.ProjectDepartments.Any(pd => pd.Department.PlantId == plantId));
             return projects.Select(ProjectMapper.ToSummaryDto);
         }
 
@@ -661,12 +671,13 @@ namespace PMHUB.Application.Services
                 CreatedAt = DateTime.UtcNow
             };
 
+            SyncDepartments(subProject, GetCurrentDepartmentIds(parent));
+
             await _projectRepository.AddAsync(subProject);
             await _projectRepository.SaveChangesAsync();
 
-            var department = await _departmentRepository.GetByIdAsync(parent.DepartmentId);
             var created = await _projectRepository.GetByIdWithIncludesAsync(subProject.Id);
-            return ProjectMapper.ToDto(created!, department);
+            return ProjectMapper.ToDto(created!, null);
         }
 
         // ── MEMBRES ───────────────────────────────────────────
@@ -1253,6 +1264,81 @@ namespace PMHUB.Application.Services
             await RecalculateInternAllocationHoursWorkedAsync(allocationId);
         }
         // ── HELPERS PRIVÉS ────────────────────────────────────
+        private static IReadOnlyCollection<Guid> ResolveDepartmentIds(Guid? departmentId, IEnumerable<Guid>? departmentIds)
+        {
+            var normalizedIds = (departmentIds ?? Enumerable.Empty<Guid>())
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
+
+            if (normalizedIds.Count == 0 && departmentId.HasValue && departmentId.Value != Guid.Empty)
+                normalizedIds.Add(departmentId.Value);
+
+            if (normalizedIds.Count == 0)
+                throw new BadRequestException("At least one department is required.");
+
+            return normalizedIds;
+        }
+
+        private async Task<List<Department>> GetDepartmentsOrThrowAsync(IEnumerable<Guid> departmentIds)
+        {
+            var departments = new List<Department>();
+
+            foreach (var departmentId in departmentIds.Distinct())
+            {
+                var department = await _departmentRepository.GetByIdAsync(departmentId)
+                    ?? throw new NotFoundException("Department", departmentId);
+                departments.Add(department);
+            }
+
+            return departments;
+        }
+
+        private static IReadOnlyCollection<Guid> GetCurrentDepartmentIds(Project project)
+        {
+            var departmentIds = project.ProjectDepartments
+                .Select(pd => pd.DepartmentId)
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
+
+            if (departmentIds.Count == 0 && project.DepartmentId != Guid.Empty)
+                departmentIds.Add(project.DepartmentId);
+
+            return departmentIds;
+        }
+
+        private static void SyncDepartments(Project project, IEnumerable<Guid> departmentIds)
+        {
+            var incomingDepartmentIds = departmentIds
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
+
+            if (incomingDepartmentIds.Count == 0)
+                throw new BadRequestException("At least one department is required.");
+
+            project.DepartmentId = incomingDepartmentIds.First();
+
+            foreach (var item in project.ProjectDepartments
+                .Where(pd => !incomingDepartmentIds.Contains(pd.DepartmentId))
+                .ToList())
+            {
+                project.ProjectDepartments.Remove(item);
+            }
+
+            foreach (var departmentId in incomingDepartmentIds)
+            {
+                if (!project.ProjectDepartments.Any(pd => pd.DepartmentId == departmentId))
+                {
+                    project.ProjectDepartments.Add(new ProjectDepartment
+                    {
+                        DepartmentId = departmentId
+                    });
+                }
+            }
+        }
+
         private static Project BuildProject(
             CreateFullProjectDto dto,
             Guid departmentId,

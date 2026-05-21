@@ -8,10 +8,9 @@ namespace PMHUB.Domain.Entities
         public bool IsActive { get; set; } = true;
         public bool IsApproved { get; set; } = false;
 
-        [Required]
-        public Guid RoleId { get; set; }
+        public Guid? RoleId { get; set; }
         [ForeignKey("RoleId")]
-        public Role Role { get; set; } = null!;
+        public Role? Role { get; set; }
 
         public Guid? ApprovedById { get; set; }
         [ForeignKey("ApprovedById")]

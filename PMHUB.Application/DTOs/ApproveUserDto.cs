@@ -10,5 +10,7 @@ namespace PMHUB.Application.DTOs
 
         [Required(ErrorMessage = "Approval decision is required.")]
         public bool IsApproved { get; set; }
+
+        public Guid? RoleId { get; set; }
     }
 }

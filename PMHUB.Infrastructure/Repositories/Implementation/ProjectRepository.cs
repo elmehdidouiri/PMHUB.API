@@ -19,8 +19,19 @@ namespace PMHUB.Infrastructure.Repositories
 
         private IQueryable<Project> WithSummaryIncludes() =>
             _context.Projects
+                .AsSplitQuery()
                 .Include(p => p.Department)
-                    .ThenInclude(d => d!.Plant);
+                    .ThenInclude(d => d!.Plant)
+                .Include(p => p.ProjectDepartments)
+                    .ThenInclude(pd => pd.Department)
+                        .ThenInclude(d => d.Plant)
+                .Include(p => p.ProjectBusinessUnits)
+                .Include(p => p.ProjectTechnologies)
+                .Include(p => p.ProjectSolutionDomains)
+                .Include(p => p.ProjectMembers)
+                .Include(p => p.ProjectResources)
+                .Include(p => p.StrategicCriteria)
+                .Include(p => p.KPIs);
 
         private IQueryable<Project> WithIncludes() =>
             _context.Projects
@@ -29,6 +40,12 @@ namespace PMHUB.Infrastructure.Repositories
                     .ThenInclude(d => d!.BusinessUnit)
                 .Include(p => p.Department)
                     .ThenInclude(d => d!.Plant)
+                .Include(p => p.ProjectDepartments)
+                    .ThenInclude(pd => pd.Department)
+                        .ThenInclude(d => d.BusinessUnit)
+                .Include(p => p.ProjectDepartments)
+                    .ThenInclude(pd => pd.Department)
+                        .ThenInclude(d => d.Plant)
                 .Include(p => p.ProjectBusinessUnits)
                     .ThenInclude(pbu => pbu.BusinessUnit)
                 .Include(p => p.ProjectTechnologies)
@@ -78,6 +95,7 @@ namespace PMHUB.Infrastructure.Repositories
             _context.Projects
                 .AsSplitQuery()
                 .Include(p => p.ProjectBusinessUnits)
+                .Include(p => p.ProjectDepartments)
                 .Include(p => p.ProjectTechnologies)
                 .Include(p => p.ProjectSolutionDomains)
                 .Include(p => p.ProjectMembers)
@@ -106,6 +124,9 @@ namespace PMHUB.Infrastructure.Repositories
                     .ThenInclude(pt => pt.Technology)
                 .Include(p => p.ProjectBusinessUnits)
                     .ThenInclude(pbu => pbu.BusinessUnit)
+                .Include(p => p.ProjectDepartments)
+                    .ThenInclude(pd => pd.Department)
+                        .ThenInclude(d => d.Plant)
                 .Include(p => p.ProjectSolutionDomains)
                     .ThenInclude(psd => psd.SolutionDomain)
                 .Include(p => p.StrategicCriteria)
@@ -165,10 +186,14 @@ namespace PMHUB.Infrastructure.Repositories
 
             var totalCount = await queryable.CountAsync();
 
-            var items = await queryable
-               .Skip((query.PageNumber - 1) * query.PageSize)
-               .Take(query.PageSize)
-               .ToListAsync();
+            if (!query.All)
+            {
+                queryable = queryable
+                   .Skip((query.PageNumber - 1) * query.PageSize)
+                   .Take(query.PageSize);
+            }
+
+            var items = await queryable.ToListAsync();
 
             return (items, totalCount);
         }
@@ -192,18 +217,32 @@ namespace PMHUB.Infrastructure.Repositories
 
             if (query.Status.HasValue)
                 queryable = queryable.Where(p => p.Status == query.Status.Value);
+            else if (TryParseProjectStatus(query.ProjectStatus, out var projectStatus))
+                queryable = queryable.Where(p => p.Status == projectStatus);
 
             if (query.Phase.HasValue)
                 queryable = queryable.Where(p => p.Phase == query.Phase.Value);
+            else if (TryParseProjectPhase(query.ProjectPhase, out var projectPhase))
+                queryable = queryable.Where(p => p.Phase == projectPhase);
 
             if (query.ProjectType.HasValue)
                 queryable = queryable.Where(p => p.ProjectType == query.ProjectType.Value);
 
+            if (TryParseProjectManagementType(query.ProjectManagementType, out var projectManagementType))
+                queryable = queryable.Where(p => p.ProjectManagementType == projectManagementType);
+
             if (query.DepartmentId.HasValue)
-                queryable = queryable.Where(p => p.DepartmentId == query.DepartmentId.Value);
+                queryable = queryable.Where(p =>
+                    p.DepartmentId == query.DepartmentId.Value ||
+                    p.ProjectDepartments.Any(pd => pd.DepartmentId == query.DepartmentId.Value));
 
             if (query.BusinessUnitId.HasValue)
                 queryable = queryable.Where(p => p.ProjectBusinessUnits.Any(bu => bu.BusinessUnitId == query.BusinessUnitId.Value));
+
+            if (query.PlantId.HasValue)
+                queryable = queryable.Where(p =>
+                    (p.Department != null && p.Department.PlantId == query.PlantId.Value) ||
+                    p.ProjectDepartments.Any(pd => pd.Department.PlantId == query.PlantId.Value));
 
             if (query.ProjectManagerId.HasValue)
                 queryable = queryable.Where(p => p.ProjectManagerId == query.ProjectManagerId.Value);
@@ -220,6 +259,16 @@ namespace PMHUB.Infrastructure.Repositories
                 queryable = queryable.Where(p => 
                     p.InternAllocations.Any(ia => ia.InternId == query.InternId.Value));
             }
+
+            var period = ResolveProjectPeriod(query);
+            if (period.Start.HasValue)
+                queryable = queryable.Where(p => p.StartDate >= period.Start.Value);
+
+            if (period.EndExclusive.HasValue)
+                queryable = queryable.Where(p => p.StartDate < period.EndExclusive.Value);
+
+            if (query.IncompleteOnly)
+                queryable = queryable.Where(ProjectDataIncompletePredicate());
 
             queryable = query.SortBy?.ToLower() switch
             {
@@ -239,6 +288,74 @@ namespace PMHUB.Infrastructure.Repositories
             };
 
             return queryable;
+        }
+
+        private static bool TryParseProjectStatus(string? value, out PMHUB.Domain.Enums.ProjectStatus status)
+        {
+            return Enum.TryParse(value, true, out status);
+        }
+
+        private static bool TryParseProjectPhase(string? value, out PMHUB.Domain.Enums.ProjectPhase phase)
+        {
+            return Enum.TryParse(value, true, out phase);
+        }
+
+        private static bool TryParseProjectManagementType(string? value, out PMHUB.Domain.Enums.Category type)
+        {
+            return Enum.TryParse(value, true, out type);
+        }
+
+        private static (DateTime? Start, DateTime? EndExclusive) ResolveProjectPeriod(ProjectSearchDto query)
+        {
+            var start = query.StartDate?.Date;
+            var endExclusive = query.EndDate?.Date.AddDays(1);
+
+            if (!start.HasValue && !endExclusive.HasValue)
+            {
+                if (query.Year.HasValue && query.Month is >= 1 and <= 12)
+                {
+                    start = new DateTime(query.Year.Value, query.Month.Value, 1);
+                    endExclusive = start.Value.AddMonths(1);
+                }
+                else if (query.Year.HasValue)
+                {
+                    start = new DateTime(query.Year.Value, 1, 1);
+                    endExclusive = start.Value.AddYears(1);
+                }
+            }
+
+            return (start, endExclusive);
+        }
+
+        private static Expression<Func<Project, bool>> ProjectDataIncompletePredicate()
+        {
+            return p =>
+                (p.Name == null || p.Name.Trim() == string.Empty || p.Name.Trim().ToUpper() == "VIDE") ||
+                (p.Description == null || p.Description.Trim() == string.Empty || p.Description.Trim().ToUpper() == "VIDE") ||
+                (p.DepartmentId == Guid.Empty && !p.ProjectDepartments.Any()) ||
+                p.Budget <= 0 ||
+                p.StartDate == default ||
+                !p.EstimatedDueDate.HasValue ||
+                (p.Status == PMHUB.Domain.Enums.ProjectStatus.Done && !p.EndDate.HasValue) ||
+                !p.ProjectManagerId.HasValue ||
+                (p.Sponsor == null || p.Sponsor.Trim() == string.Empty || p.Sponsor.Trim().ToUpper() == "VIDE") ||
+                p.DigitalContribution <= 0 ||
+                (p.CostCenter == null || p.CostCenter.Trim() == string.Empty || p.CostCenter.Trim().ToUpper() == "VIDE") ||
+                p.CostSaving <= 0 ||
+                (p.CodeSourceLink == null || p.CodeSourceLink.Trim() == string.Empty || p.CodeSourceLink.Trim().ToUpper() == "VIDE") ||
+                (p.SolutionLink == null || p.SolutionLink.Trim() == string.Empty || p.SolutionLink.Trim().ToUpper() == "VIDE") ||
+                (p.ServerHostName == null || p.ServerHostName.Trim() == string.Empty || p.ServerHostName.Trim().ToUpper() == "VIDE") ||
+                (p.CurrentState == null || p.CurrentState.Trim() == string.Empty || p.CurrentState.Trim().ToUpper() == "VIDE") ||
+                (p.NextSteps == null || p.NextSteps.Trim() == string.Empty || p.NextSteps.Trim().ToUpper() == "VIDE") ||
+                (p.Enhancements == null || p.Enhancements.Trim() == string.Empty || p.Enhancements.Trim().ToUpper() == "VIDE") ||
+                p.EstimatedHours <= 0 ||
+                !p.ProjectBusinessUnits.Any() ||
+                !p.ProjectTechnologies.Any() ||
+                !p.ProjectSolutionDomains.Any() ||
+                !p.ProjectMembers.Any() ||
+                !p.ProjectResources.Any() ||
+                !p.StrategicCriteria.Any() ||
+                !p.KPIs.Any();
         }
     } 
 }

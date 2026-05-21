@@ -13,6 +13,7 @@ namespace PMHUB.Application.DTOs
         public string? Name { get; set; }
         public string? Description { get; set; }
         public Guid? DepartmentId { get; set; }
+        public ICollection<Guid>? DepartmentIds { get; set; }
         public ProjectStatus? Status { get; set; }
         public ProjectPhase? Phase { get; set; }
         public ProcessStatus? ProcessStatus { get; set; }

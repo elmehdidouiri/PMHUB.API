@@ -10,6 +10,8 @@ namespace PMHUB.Application.Services
 {
     public class DepartmentService : IDepartmentService
     {
+        private const string PlaceholderDepartmentName = "-";
+
         private readonly IRepository<Department> _departmentRepository;
         private readonly IRepository<BusinessUnit> _businessUnitRepository;
         private readonly IRepository<Plant> _plantRepository;
@@ -65,15 +67,17 @@ namespace PMHUB.Application.Services
             _logger.LogInformation("Récupération de tous les départements");
 
             var departments = await _departmentRepository.GetAllAsync();
-            return departments.Select(d => new DepartmentDto
-            {
-                Id = d.Id,
-                Name = d.Name,
-                BusinessUnitId = d.BusinessUnitId,
-                PlantId = d.PlantId,
-                CreatedAt = d.CreatedAt,
-                UpdatedAt = d.UpdatedAt
-            });
+            return departments
+                .Where(d => !IsPlaceholderDepartment(d.Name))
+                .Select(d => new DepartmentDto
+                {
+                    Id = d.Id,
+                    Name = d.Name,
+                    BusinessUnitId = d.BusinessUnitId,
+                    PlantId = d.PlantId,
+                    CreatedAt = d.CreatedAt,
+                    UpdatedAt = d.UpdatedAt
+                });
         }
 
         public async Task<DepartmentDto?> GetByIdAsync(Guid id)
@@ -155,5 +159,8 @@ namespace PMHUB.Application.Services
             CreatedAt = d.CreatedAt,
             UpdatedAt = d.UpdatedAt
         };
+
+        private static bool IsPlaceholderDepartment(string? name) =>
+            string.Equals(name?.Trim(), PlaceholderDepartmentName, StringComparison.Ordinal);
     }
 }

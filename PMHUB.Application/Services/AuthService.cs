@@ -69,17 +69,13 @@ namespace PMHUB.Application.Services.Implementation
             if (existingUsers.Any())
                 throw new ConflictException("User", dto.Email);
 
-            var roleId = dto.RoleId ?? throw new BadRequestException("Role ID is required.");
-            var role = await _roleRepository.GetByIdAsync(roleId)
-                ?? throw new NotFoundException("Role", roleId);
-
             var newUser = new NormalUser
             {
                 FirstName = dto.FirstName,
                 LastName = dto.LastName,
                 Email = dto.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                RoleId = roleId,
+                RoleId = null,
                 IsApproved = false,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
@@ -295,15 +291,28 @@ namespace PMHUB.Application.Services.Implementation
 
             if (dto.IsApproved)
             {
+                var roleId = dto.RoleId ?? throw new BadRequestException("Role ID is required when approving a user.");
+                await (_roleRepository.GetByIdAsync(roleId)
+                    ?? throw new NotFoundException("Role", roleId));
+
+                user.RoleId = roleId;
                 user.IsApproved = true;
                 user.ApprovedById = adminId;
                 user.ApprovedAt = DateTime.UtcNow;
             }
             else
             {
-                user.IsApproved = false;
-                user.ApprovedById = null;
-                user.ApprovedAt = null;
+                var rejectedUserEmail = user.Email;
+                var rejectedUserFirstName = user.FirstName;
+
+                _userRepository.Remove(user);
+                await _userRepository.SaveChangesAsync();
+
+                _logger.LogInformation("Envoi email rejet a {Email}", user.Email);
+                await _emailService.SendRejectionEmailAsync(rejectedUserEmail, rejectedUserFirstName);
+
+                _logger.LogInformation("Utilisateur {UserId} supprime apres rejet", dto.UserId);
+                return;
             }
 
             user.UpdatedAt = DateTime.UtcNow;
@@ -311,16 +320,8 @@ namespace PMHUB.Application.Services.Implementation
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
 
-            if (dto.IsApproved)
-            {
-                _logger.LogInformation("Envoi email approbation a {Email}", user.Email);
-                await _emailService.SendApprovalEmailAsync(user.Email, user.FirstName);
-            }
-            else
-            {
-                _logger.LogInformation("Envoi email rejet a {Email}", user.Email);
-                await _emailService.SendRejectionEmailAsync(user.Email, user.FirstName);
-            }
+            _logger.LogInformation("Envoi email approbation a {Email}", user.Email);
+            await _emailService.SendApprovalEmailAsync(user.Email, user.FirstName);
 
             _logger.LogInformation("Utilisateur {UserId} - IsApproved={IsApproved}",
                 dto.UserId, dto.IsApproved);

@@ -1,6 +1,6 @@
 namespace PMHUB.Application.DTOs
 {
-    public class HoursAllocationDashboardQueryDto
+    public class HoursAllocationDashboardQueryDto : PaginationQueryDto
     {
         public Guid? UserId { get; set; }
         public Guid? MemberId { get; set; }
@@ -12,6 +12,7 @@ namespace PMHUB.Application.DTOs
         public DateTime? ToDate { get; set; }
         public string? QuickSelect { get; set; }
         public string? Analysis { get; set; }
+        public bool All { get; set; } = false;
     }
 
     public class HoursAllocationReminderRequestDto : HoursAllocationDashboardQueryDto
@@ -53,8 +54,21 @@ namespace PMHUB.Application.DTOs
         public List<HoursAllocationMonthlyBreakdownDto> MonthlyBreakdown { get; set; } = new();
         public List<HoursAllocationByUserDto> HoursByUser { get; set; } = new();
         public List<HoursAllocationByProjectDto> HoursByProject { get; set; } = new();
+        public List<HoursAllocationByProjectUserDto> HoursByProjectUser { get; set; } = new();
         public List<HoursAllocationByRoleDto> HoursByRole { get; set; } = new();
         public List<HoursAllocationByTeamDto> HoursByTeam { get; set; } = new();
+        public HoursAllocationPaginationDto Pagination { get; set; } = new();
+    }
+
+    public class HoursAllocationPaginationDto
+    {
+        public string Table { get; set; } = string.Empty;
+        public int PageNumber { get; set; }
+        public int PageSize { get; set; }
+        public int TotalCount { get; set; }
+        public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling((double)TotalCount / PageSize);
+        public bool HasPreviousPage => PageNumber > 1;
+        public bool HasNextPage => PageNumber < TotalPages;
     }
 
     public class HoursAllocationSummaryDto
@@ -127,6 +141,26 @@ namespace PMHUB.Application.DTOs
         public decimal TeamHours { get; set; }
         public int TeamMembers { get; set; }
         public int Allocations { get; set; }
+    }
+
+    public class HoursAllocationByProjectUserDto
+    {
+        public Guid? ProjectId { get; set; }
+        public string ProjectName { get; set; } = string.Empty;
+        public Guid UserId { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public decimal TotalHours { get; set; }
+        public decimal ExecutionHours { get; set; }
+        public decimal TechLeadHours { get; set; }
+        public decimal ProcessHours { get; set; }
+        public decimal ProjectManagementHours { get; set; }
+        public decimal ResearchAndDevHours { get; set; }
+        public decimal WorkshopHours { get; set; }
+        public decimal OtherHours { get; set; }
+        public int WorkedDays { get; set; }
+        public int AllocationCount { get; set; }
+        public bool IsProjectManager { get; set; }
     }
 
     public class HoursAllocationByRoleDto

@@ -99,6 +99,13 @@ namespace PMHUB.Application.Services
             return users.Select(UserEntityDtoMapper.ToDto);
         }
 
+        public async Task<IEnumerable<UserDto>> GetTeamMemberCandidatesAsync()
+        {
+            _logger.LogInformation("Récupération des utilisateurs éligibles comme team members");
+            var users = await _userRepository.GetTeamMemberCandidatesAsync();
+            return users.Select(UserEntityDtoMapper.ToDto);
+        }
+
         public async Task<IEnumerable<UserDto>> GetByRoleIdAsync(Guid roleId)
         {
             _logger.LogInformation("Récupération des utilisateurs pour le rôle {RoleId}", roleId);
@@ -185,9 +192,25 @@ namespace PMHUB.Application.Services
             if (user.IsApproved && dto.IsApproved)
             throw new BadRequestException("This user has already been approved.");
 
+            if (dto.IsApproved)
+            {
+                var roleId = dto.RoleId ?? throw new BadRequestException("Role ID is required when approving a user.");
+                await (_roleRepository.GetByIdAsync(roleId)
+                    ?? throw new NotFoundException("Role", roleId));
+                user.RoleId = roleId;
+                user.ApprovedAt = DateTime.UtcNow;
+                user.ApprovedById = adminId;
+            }
+            else
+            {
+                _userRepository.Remove(user);
+                await _userRepository.SaveChangesAsync();
+
+                _logger.LogInformation("Utilisateur {UserId} supprime apres rejet", dto.UserId);
+                return;
+            }
+
             user.IsApproved = dto.IsApproved;
-            user.ApprovedAt = DateTime.UtcNow;
-            user.ApprovedById = adminId;
             user.UpdatedAt = DateTime.UtcNow;
 
             _userRepository.Update(user);

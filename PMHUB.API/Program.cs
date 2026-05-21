@@ -40,18 +40,18 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
     {
-        var errors = context.ModelState
-            .Where(kvp => kvp.Value?.Errors.Count > 0)
-            .ToDictionary(
-                kvp => kvp.Key,
-                kvp => kvp.Value!.Errors
-                    .Select(error => ErrorMessageTranslator.Translate(error.ErrorMessage))
-                    .ToArray());
+        var requestBodyType = ValidationMetadataHelper.GetRequestBodyType(context);
+        var errors = ValidationMetadataHelper.NormalizeErrors(context.ModelState);
 
         return new BadRequestObjectResult(
-            ApiResponse.Fail(
-                ErrorMessageTranslator.BuildValidationSummary(errors, "Validation failed."),
-                errors));
+            new
+            {
+                Success = false,
+                Message = ErrorMessageTranslator.BuildValidationSummary(errors, "Validation failed."),
+                Errors = errors,
+                RequiredFields = ValidationMetadataHelper.GetRequiredFields(requestBodyType),
+                RequiredFieldGroups = ValidationMetadataHelper.GetRequiredFieldGroups(requestBodyType)
+            });
     };
 });
 
@@ -150,6 +150,7 @@ builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IHoursAllocationDashboardService, HoursAllocationDashboardService>();
 builder.Services.AddScoped<IInternStatisticsService, InternStatisticsService>();
 builder.Services.AddScoped<IHourBookingReminderService, HourBookingReminderService>();
+builder.Services.AddScoped<IHeaderNotificationService, HeaderNotificationService>();
 builder.Services.AddHostedService<WeeklyHourBookingReminderHostedService>();
 
 builder.Services.Configure<FormOptions>(options =>

@@ -53,6 +53,7 @@ namespace PMHUB.Infrastructure.Persistence
 
         // ── Many-to-Many  
         public DbSet<ProjectBusinessUnit> ProjectBusinessUnits { get; set; } = null!;
+        public DbSet<ProjectDepartment> ProjectDepartments { get; set; } = null!;
         public DbSet<ProjectTechnology> ProjectTechnologies { get; set; } = null!;
         public DbSet<ProjectSolutionDomain> ProjectSolutionDomains { get; set; } = null!;
         public DbSet<SolutionDomain> SolutionDomains { get; set; } = null!;
@@ -384,6 +385,19 @@ namespace PMHUB.Infrastructure.Persistence
                 .OnDelete(DeleteBehavior.Restrict);
 
             // ── Many-to-Many : Project ↔ Technology  
+            builder.Entity<ProjectDepartment>()
+                .HasKey(pd => new { pd.ProjectId, pd.DepartmentId });
+            builder.Entity<ProjectDepartment>()
+                .HasOne(pd => pd.Project)
+                .WithMany(p => p.ProjectDepartments)
+                .HasForeignKey(pd => pd.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.Entity<ProjectDepartment>()
+                .HasOne(pd => pd.Department)
+                .WithMany(d => d.ProjectDepartments)
+                .HasForeignKey(pd => pd.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.Entity<ProjectTechnology>()
                 .HasKey(pt => new { pt.ProjectId, pt.TechnologyId });
             builder.Entity<ProjectTechnology>()

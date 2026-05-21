@@ -18,14 +18,20 @@ namespace PMHUB.Application.DTOs
         public string ProjectType { get; set; } = string.Empty;
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
+        public DateTime? EstimatedDueDate { get; set; }
         public int ProgressPercentage { get; set; }
         public int Progress => ProgressPercentage;
         public bool IsDelayed { get; set; }
         public decimal Budget { get; set; }
+        public ICollection<Guid> DepartmentIds { get; set; } = new List<Guid>();
         public string DepartmentName { get; set; } = string.Empty;
+        public ICollection<string> DepartmentNames { get; set; } = new List<string>();
         public string PlantName { get; set; } = string.Empty;
         public string Sponsor { get; set; } = string.Empty;
         public decimal EstimatedHours { get; set; }
         public decimal ActualHours { get; set; }
+        public bool IsDataComplete { get; set; }
+        public int DataCompletionPercentage { get; set; }
+        public ICollection<string> MissingFields { get; set; } = new List<string>();
     }
 }

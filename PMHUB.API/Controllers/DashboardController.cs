@@ -51,7 +51,7 @@ namespace PMHUB.API.Controllers
         {
             var requesterId = TryGetAuthenticatedUserId();
             var result = await _dashboardService.GetAdminBiDashboardAsync(query, requesterId);
-            var message = result.Kpis.TotalProjects == 0
+            var message = result.Summary.TotalProjects == 0
                 ? "No data was found for the requested filters."
                 : null;
 

@@ -2,11 +2,8 @@ namespace PMHUB.Application.DTOs
 {
     public class DashboardAdminBiDto
     {
-        public DashboardBiFiltersDto Filters { get; set; } = new();
-        public DashboardBiKpisDto Kpis { get; set; } = new();
+        public DashboardAdminSummaryDto Summary { get; set; } = new();
         public DashboardBiChartsDto Charts { get; set; } = new();
-        public DashboardBiTablesDto Tables { get; set; } = new();
-        public List<DashboardAlertDto> Alerts { get; set; } = new();
     }
 
     public class DashboardBiFiltersDto
@@ -48,23 +45,12 @@ namespace PMHUB.Application.DTOs
 
     public class DashboardBiChartsDto
     {
+        public List<DashboardLabelValueDto> ProjectsByBusinessUnit { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByDepartment { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByPlant { get; set; } = new();
         public List<DashboardLabelValueDto> ProjectsByStatus { get; set; } = new();
         public List<DashboardLabelValueDto> ProjectsByPhase { get; set; } = new();
-        public List<DashboardLabelValueDto> DelayRate { get; set; } = new();
-        public List<DashboardLabelValueDto> HoursByCategory { get; set; } = new();
-        public List<DashboardLabelValueDto> HoursByStage { get; set; } = new();
-        public List<DashboardMonthlyHoursByCategoryDto> MonthlyHoursByCategory { get; set; } = new();
-        public List<DashboardBiMonthlyTrendDto> MonthlyWorkloadTrend { get; set; } = new();
-        public List<DashboardBiPerformanceTrendDto> PerformanceTrend { get; set; } = new();
-        public List<DashboardLabelValueDto> WorkloadByRole { get; set; } = new();
-        public List<DashboardLabelValueDto> WorkloadByDepartment { get; set; } = new();
-        public List<DashboardLabelValueDto> WorkloadByBusinessUnit { get; set; } = new();
-        public List<DashboardLabelValueDto> CostSavingByDepartment { get; set; } = new();
-        public List<DashboardLabelValueDto> CostSavingByBusinessUnit { get; set; } = new();
-        public List<DashboardLabelValueDto> ProjectsByPlant { get; set; } = new();
-        public List<DashboardLabelValueDto> ProjectsByBusinessUnit { get; set; } = new();
-        public List<DashboardEstimatedVsActualProjectDto> EstimatedVsActualProjects { get; set; } = new();
-        public List<DashboardRiskMatrixProjectDto> RiskMatrix { get; set; } = new();
+        public List<DashboardLabelValueDto> ProjectsByProjectManagementType { get; set; } = new();
     }
 
     public class DashboardBiTablesDto

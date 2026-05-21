@@ -93,6 +93,7 @@ namespace PMHUB.Domain.Entities
         public ICollection<Project> SubProjects { get; set; } = new List<Project>();
 
         public ICollection<ProjectBusinessUnit> ProjectBusinessUnits { get; set; } = new List<ProjectBusinessUnit>();
+        public ICollection<ProjectDepartment> ProjectDepartments { get; set; } = new List<ProjectDepartment>();
         public ICollection<ProjectTechnology> ProjectTechnologies { get; set; } = new List<ProjectTechnology>();
         public ICollection<ProjectSolutionDomain> ProjectSolutionDomains { get; set; } = new List<ProjectSolutionDomain>();
 

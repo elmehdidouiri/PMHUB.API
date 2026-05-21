@@ -13,8 +13,8 @@ namespace PMHUB.Application.DTOs
         [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters.")]
         public string? Description { get; set; }
 
-        [Required(ErrorMessage = "Department is required.")]
         public Guid? DepartmentId { get; set; }
+        public ICollection<Guid> DepartmentIds { get; set; } = new List<Guid>();
 
         [Required(ErrorMessage = "Budget is required.")]
         [Range(0, double.MaxValue, ErrorMessage = "Budget must be a positive value.")]

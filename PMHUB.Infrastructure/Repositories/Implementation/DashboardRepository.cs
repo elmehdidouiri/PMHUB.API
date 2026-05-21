@@ -12,6 +12,7 @@ namespace PMHUB.Infrastructure.Repositories
     public class DashboardRepository : IDashboardRepository
     {
         private const decimal DefaultKpiTargetPercentage = 85m;
+        private const string PlaceholderDepartmentName = "-";
 
         private readonly PMHubDbContext _context;
         private readonly CompanyStandards _standards;
@@ -195,10 +196,11 @@ namespace PMHUB.Infrastructure.Repositories
                 approvedUsers = await usersBaseQuery.CountAsync(u => u.IsApproved);
 
                 usersByRole = await usersBaseQuery
+                    .Where(u => u.RoleId.HasValue)
                     .GroupBy(u => new { u.RoleId, u.Role.Name })
                     .Select(g => new UsersByRoleDto
                     {
-                        RoleId = g.Key.RoleId,
+                        RoleId = g.Key.RoleId!.Value,
                         RoleName = g.Key.Name,
                         Value = g.Count()
                     })
@@ -460,398 +462,147 @@ namespace PMHUB.Infrastructure.Repositories
 
         public async Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(DashboardQueryDto query)
         {
-            var topN = query.TopN <= 0 ? 5 : Math.Min(query.TopN, 20);
-            var now = DateTime.UtcNow.Date;
-            var workloadYear = query.Year.HasValue && query.Year.Value > 0
-                ? query.Year.Value
-                : CompanyYearHelper.GetCurrentCompanyYear(now);
-
-            var overview = await GetDashboardOverviewAsync(query, isAdminScope: true);
-            var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
-            var projectIdsQuery = projectsQuery.Select(p => p.Id);
-
-            var allHoursScopedQuery = _context.HourEntries
-                .AsNoTracking()
-                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value));
-
-            var trackedHoursQuery = ApplyYearMonthFilter(allHoursScopedQuery, query.Year, query.Month);
-
-            var totalBudget = await projectsQuery.SumAsync(p => (decimal?)p.Budget) ?? 0m;
-            var totalCostSaving = await projectsQuery.SumAsync(p => (decimal?)p.CostSaving) ?? 0m;
-            var totalDigitalContribution = await projectsQuery.SumAsync(p => (decimal?)p.DigitalContribution) ?? 0m;
-            var totalCost = await trackedHoursQuery.SumAsync(h => (decimal?)h.TotalCost) ?? 0m;
-            var premiumApprovedHours = await trackedHoursQuery
-                .Where(h => h.IsPremium && h.PremiumApprovalStatus == ApprovalStatus.Approved)
-                .SumAsync(h => (decimal?)h.TotalHours) ?? 0m;
-            var premiumPendingHours = await trackedHoursQuery
-                .Where(h => h.IsPremium && h.PremiumApprovalStatus == ApprovalStatus.Pending)
-                .SumAsync(h => (decimal?)h.TotalHours) ?? 0m;
-
-            var ongoingProjects = await projectsQuery.CountAsync(p => p.Status == ProjectStatus.Ongoing);
-            var plannedProjects = await projectsQuery.CountAsync(p => p.Status == ProjectStatus.Planned);
-            var onHoldProjects = await projectsQuery.CountAsync(p => p.Status == ProjectStatus.OnHold);
-            var doneProjects = await projectsQuery.CountAsync(p => p.Status == ProjectStatus.Done);
-            var averageProgress = await projectsQuery.Select(p => (decimal?)p.ProgressPercentage).AverageAsync() ?? 0m;
-
-            var usersQuery = BuildScopedUsersQuery(query, isAdminScope: true, projectIdsQuery);
-            var totalUsers = await usersQuery.CountAsync();
-            var activeUsers = await usersQuery.CountAsync(u => u.IsActive);
-            var approvedUsers = await usersQuery.CountAsync(u => u.IsApproved);
-            var usersByRole = await usersQuery
-                .GroupBy(u => new { u.RoleId, u.Role.Name })
-                .Select(g => new UsersByRoleDto
-                {
-                    RoleId = g.Key.RoleId,
-                    RoleName = g.Key.Name,
-                    Value = g.Count()
-                })
-                .OrderByDescending(x => x.Value)
-                .ToListAsync();
-
-            var openRoadblocks = await _context.ProjectRoadblocks
-                .AsNoTracking()
-                .CountAsync(r => projectIdsQuery.Contains(r.ProjectId) && r.Status == RoadblockStatus.Open);
-            var overdueRoadblocks = await _context.ProjectRoadblocks
-                .AsNoTracking()
-                .CountAsync(r => projectIdsQuery.Contains(r.ProjectId) && r.Status == RoadblockStatus.Open && r.DueAt < now);
-            var dueSoonLimit = now.AddDays(14);
-            var dueSoonProjects = await projectsQuery.CountAsync(p =>
-                p.EstimatedDueDate.HasValue &&
-                p.EstimatedDueDate.Value >= now &&
-                p.EstimatedDueDate.Value <= dueSoonLimit &&
-                p.Status != ProjectStatus.Done);
-
-            var monthlyRows = await allHoursScopedQuery
-                .Where(h => h.Date.Year == workloadYear)
-                .GroupBy(h => h.Date.Month)
-                .Select(g => new
-                {
-                    Month = g.Key,
-                    TotalHours = g.Sum(x => x.TotalHours),
-                    ExecutionHours = g.Sum(x => x.ExecutionHours),
-                    SupervisionHours = g.Sum(x => x.SupervisionHours),
-                    ProcessHours = g.Sum(x => x.ProcessHours),
-                    ManagementHours = g.Sum(x => x.ManagementHours),
-                    RAndDHours = g.Sum(x => x.RAndDHours),
-                    WorkshopHours = g.Sum(x => x.WorkshopHours),
-                    OtherHours = g.Sum(x => x.OtherHours),
-                    InternManagementHours = g.Sum(x => x.InternManagementHours)
-                })
-                .ToListAsync();
-
-            var monthlyHoursByCategory = Enumerable.Range(1, 12)
-                .Select(month =>
-                {
-                    var row = monthlyRows.FirstOrDefault(x => x.Month == month);
-                    return new DashboardMonthlyHoursByCategoryDto
-                    {
-                        Year = workloadYear,
-                        Month = month,
-                        MonthName = new DateTime(workloadYear, month, 1).ToString("MMM"),
-                        TotalHours = row?.TotalHours ?? 0m,
-                        ExecutionHours = row?.ExecutionHours ?? 0m,
-                        SupervisionHours = row?.SupervisionHours ?? 0m,
-                        ProcessHours = row?.ProcessHours ?? 0m,
-                        ManagementHours = row?.ManagementHours ?? 0m,
-                        RAndDHours = row?.RAndDHours ?? 0m,
-                        WorkshopHours = row?.WorkshopHours ?? 0m,
-                        OtherHours = row?.OtherHours ?? 0m,
-                        InternManagementHours = row?.InternManagementHours ?? 0m
-                    };
-                })
-                .ToList();
-
-            var topProjectRows = await trackedHoursQuery
-                .GroupBy(h => new
-                {
-                    h.ProjectId,
-                    h.Project.Name,
-                    h.Project.Status,
-                    h.Project.Phase,
-                    h.Project.ProgressPercentage,
-                    h.Project.EstimatedHours,
-                    h.Project.Budget,
-                    h.Project.EstimatedDueDate
-                })
-                .Select(g => new
-                {
-                    ProjectId = g.Key.ProjectId,
-                    ProjectName = g.Key.Name,
-                    g.Key.Status,
-                    g.Key.Phase,
-                    ProgressPercentage = g.Key.ProgressPercentage,
-                    TotalHours = g.Sum(x => x.TotalHours),
-                    EstimatedHours = g.Key.EstimatedHours,
-                    Budget = g.Key.Budget,
-                    TotalCost = g.Sum(x => x.TotalCost),
-                    EstimatedDueDate = g.Key.EstimatedDueDate
-                })
-                .OrderByDescending(x => x.TotalHours)
-                .Take(topN)
-                .ToListAsync();
-
-            var topProjects = topProjectRows
-                .Select(x => new DashboardTopProjectDto
-                {
-                    ProjectId = x.ProjectId!.Value,
-                    ProjectName = x.ProjectName,
-                    Status = x.Status.ToString(),
-                    Phase = x.Phase.ToString(),
-                    ProgressPercentage = x.ProgressPercentage,
-                    TotalHours = x.TotalHours,
-                    EstimatedHours = x.EstimatedHours,
-                    Budget = x.Budget,
-                    TotalCost = x.TotalCost,
-                    EstimatedDueDate = x.EstimatedDueDate,
-                    IsDelayed = x.EstimatedDueDate.HasValue &&
-                        x.EstimatedDueDate.Value < now &&
-                        x.Status != ProjectStatus.Done
-                })
-                .ToList();
-
-            var alerts = BuildExtendedDashboardAlerts(
-                overview.Summary.DelayedProjects,
-                overdueRoadblocks,
-                premiumPendingHours,
-                dueSoonProjects,
-                totalBudget,
-                totalCost);
+            var metrics = await GetAdminDashboardLightweightMetricsAsync(query);
 
             return new DashboardExtendedAdminDto
             {
-                Summary = overview.Summary,
-                PortfolioHealth = new DashboardPortfolioHealthDto
+                Summary = metrics.Summary,
+                Charts = new DashboardExtendedAdminChartsDto
                 {
-                    TotalProjects = overview.Summary.TotalProjects,
-                    OngoingProjects = ongoingProjects,
-                    PlannedProjects = plannedProjects,
-                    OnHoldProjects = onHoldProjects,
-                    DoneProjects = doneProjects,
-                    DelayedProjects = overview.Summary.DelayedProjects,
-                    DoneProjectsBelowTarget = overview.Summary.DoneProjectsBelowTarget,
-                    DoneProjectsAboveTarget = overview.Summary.DoneProjectsAboveTarget,
-                    AverageProgress = Math.Round(averageProgress, 2),
-                    AverageOtd = overview.Summary.AverageOtd,
-                    AverageEffectiveness = overview.Summary.AverageEffectiveness,
-                    ProjectsByStatus = overview.Charts.ProjectsByStatus,
-                    ProjectsByPhase = overview.Charts.ProjectsByPhase
-                },
-                Workload = new DashboardWorkloadDto
-                {
-                    TotalTrackedHours = overview.Summary.TotalTrackedHours,
-                    YtdHours = overview.Summary.YtdHours,
-                    PremiumApprovedHours = premiumApprovedHours,
-                    PremiumPendingHours = premiumPendingHours,
-                    MonthlyHoursByCategory = monthlyHoursByCategory,
-                    CategoryBreakdown = overview.Charts.MonthlyHoursBreakdownByCategory,
-                    HoursByStage = overview.Charts.HoursByStage
-                },
-                Users = new DashboardUsersDto
-                {
-                    TotalUsers = totalUsers,
-                    ActiveUsers = activeUsers,
-                    InactiveUsers = totalUsers - activeUsers,
-                    ApprovedUsers = approvedUsers,
-                    PendingApprovalUsers = totalUsers - approvedUsers,
-                    UsersByRole = usersByRole
-                },
-                Risks = new DashboardRisksDto
-                {
-                    OpenRoadblocks = openRoadblocks,
-                    OverdueRoadblocks = overdueRoadblocks,
-                    DelayedProjects = overview.Summary.DelayedProjects,
-                    OnHoldProjects = onHoldProjects,
-                    DueSoonProjects = dueSoonProjects
-                },
-                Business = new DashboardBusinessDto
-                {
-                    TotalBudget = totalBudget,
-                    TotalCost = totalCost,
-                    TotalEstimatedHours = overview.Summary.TotalEstimatedHours,
-                    TotalTrackedHours = overview.Summary.TotalTrackedHours,
-                    TotalCostSaving = totalCostSaving,
-                    TotalDigitalContribution = totalDigitalContribution,
-                    BudgetConsumptionPercentage = totalBudget > 0
-                        ? Math.Round(totalCost * 100m / totalBudget, 2)
-                        : 0m
-                },
-                TopProjects = topProjects,
-                Alerts = alerts
+                    DeliveryMetrics = metrics.DeliveryMetrics,
+                    ProjectsByBusinessUnit = metrics.ProjectsByBusinessUnit,
+                    ProjectsByDepartment = metrics.ProjectsByDepartment,
+                    ProjectsByPlant = metrics.ProjectsByPlant,
+                    ProjectsByStatus = metrics.ProjectsByStatus,
+                    ProjectsByPhase = metrics.ProjectsByPhase,
+                    ProjectsByProjectManagementType = metrics.ProjectsByProjectManagementType
+                }
             };
         }
 
         public async Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(DashboardQueryDto query)
         {
-            var topN = query.TopN <= 0 ? 5 : Math.Min(query.TopN, 20);
+            var metrics = await GetAdminDashboardLightweightMetricsAsync(query);
+
+            return new DashboardAdminBiDto
+            {
+                Summary = metrics.Summary,
+                Charts = new DashboardBiChartsDto
+                {
+                    ProjectsByBusinessUnit = metrics.ProjectsByBusinessUnit,
+                    ProjectsByDepartment = metrics.ProjectsByDepartment,
+                    ProjectsByPlant = metrics.ProjectsByPlant,
+                    ProjectsByStatus = metrics.ProjectsByStatus,
+                    ProjectsByPhase = metrics.ProjectsByPhase,
+                    ProjectsByProjectManagementType = metrics.ProjectsByProjectManagementType
+                }
+            };
+        }
+
+        private async Task<DashboardAdminLightweightMetrics> GetAdminDashboardLightweightMetricsAsync(DashboardQueryDto query)
+        {
             var now = DateTime.UtcNow.Date;
-            var year = query.Year.HasValue && query.Year.Value > 0
-                ? query.Year.Value
-                : CompanyYearHelper.GetCurrentCompanyYear();
-
-            var extended = await GetExtendedAdminDashboardAsync(query);
             var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
-            var projectIdsQuery = projectsQuery.Select(p => p.Id);
 
-            var allHoursScopedQuery = _context.HourEntries
-                .AsNoTracking()
-                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value));
-            var trackedHoursQuery = query.Ytd
-                ? ApplyYtdFilter(allHoursScopedQuery, query.Year, query.Month)
-                : ApplyYearMonthFilter(allHoursScopedQuery, query.Year, query.Month);
-
-            var previousQuery = ResolvePreviousPeriodQuery(query);
-            var previousProjectsQuery = BuildScopedProjectsQuery(previousQuery, isAdminScope: true, userId: null);
-            var previousProjectIdsQuery = previousProjectsQuery.Select(p => p.Id);
-            var previousHoursQuery = _context.HourEntries
-                .AsNoTracking()
-                .Where(h => h.ProjectId.HasValue && previousProjectIdsQuery.Contains(h.ProjectId.Value));
-            previousHoursQuery = previousQuery.Ytd
-                ? ApplyYtdFilter(previousHoursQuery, previousQuery.Year, previousQuery.Month)
-                : ApplyYearMonthFilter(previousHoursQuery, previousQuery.Year, previousQuery.Month);
-
-            var totalProjects = extended.Summary.TotalProjects;
-            var previousTotalProjects = await previousProjectsQuery.CountAsync();
-            var previousTrackedHours = await previousHoursQuery.SumAsync(h => (decimal?)h.TotalHours) ?? 0m;
-            var previousDelayedProjects = await previousProjectsQuery.CountAsync(p =>
+            var totalProjects = await projectsQuery.CountAsync();
+            var delayedProjects = await projectsQuery.CountAsync(p =>
                 p.EstimatedDueDate.HasValue &&
                 p.EstimatedDueDate.Value < now &&
                 p.Status != ProjectStatus.Done);
-            var delayRate = totalProjects > 0
-                ? Math.Round(extended.Summary.DelayedProjects * 100m / totalProjects, 2)
-                : 0m;
-            var trackedHoursVariancePercent = extended.Summary.TotalEstimatedHours > 0
-                ? Math.Round((extended.Summary.TotalTrackedHours - extended.Summary.TotalEstimatedHours) * 100m / extended.Summary.TotalEstimatedHours, 2)
-                : 0m;
+            var doneProjectsBelowTarget = await projectsQuery.CountAsync(p =>
+                p.Status == ProjectStatus.Done &&
+                p.EstimatedHours > 0 &&
+                p.ActualHours < p.EstimatedHours);
+            var doneProjectsAboveTarget = await projectsQuery.CountAsync(p =>
+                p.Status == ProjectStatus.Done &&
+                p.EstimatedHours > 0 &&
+                p.ActualHours > p.EstimatedHours);
 
-            var fiscalYearStart = CompanyYearHelper.GetCompanyYearStart(year);
-            var fiscalYearEnd = CompanyYearHelper.GetCompanyYearEnd(year);
-            var fiscalMonths = Enumerable.Range(0, 12)
-                .Select(offset => fiscalYearStart.AddMonths(offset))
-                .ToList();
+            var otdDenominator = await projectsQuery.CountAsync(p => p.EstimatedDueDate.HasValue);
+            var otdNumerator = await projectsQuery.CountAsync(p =>
+                p.EstimatedDueDate.HasValue &&
+                (
+                    (p.Status == ProjectStatus.Done && p.EndDate.HasValue && p.EndDate.Value <= p.EstimatedDueDate.Value) ||
+                    (p.Status != ProjectStatus.Done && p.EstimatedDueDate.Value >= now)
+                ));
+            var averageOtd = otdDenominator == 0
+                ? 0m
+                : Math.Round((decimal)otdNumerator * 100m / otdDenominator, 2);
 
-            var monthlyWorkloadRows = await allHoursScopedQuery
-                .Where(h => h.Date >= fiscalYearStart && h.Date <= fiscalYearEnd)
-                .GroupBy(h => new { h.Date.Year, h.Date.Month })
-                .Select(g => new
+            var effectivenessRows = await projectsQuery
+                .Select(p => new DashboardEffectivenessMetricRow
                 {
-                    Year = g.Key.Year,
-                    Month = g.Key.Month,
-                    TotalHours = g.Sum(x => x.TotalHours),
-                    Cost = g.Sum(x => x.TotalCost)
+                    ProgressPercentage = p.ProgressPercentage,
+                    CurrentValue = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.CurrentValue)
+                        .FirstOrDefault(),
+                    TargetValue = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.TargetValue)
+                        .FirstOrDefault()
                 })
                 .ToListAsync();
+            var averageEffectiveness = CalculateAverageEffectiveness(effectivenessRows);
 
-            var monthlyWorkloadTrend = fiscalMonths
-                .Select(monthDate =>
-                {
-                    var row = monthlyWorkloadRows.FirstOrDefault(x => x.Year == monthDate.Year && x.Month == monthDate.Month);
-                    return new DashboardBiMonthlyTrendDto
-                    {
-                        Year = monthDate.Year,
-                        Month = monthDate.Month,
-                        MonthName = monthDate.ToString("MMM"),
-                        TotalHours = row?.TotalHours ?? 0m,
-                        EstimatedHours = extended.Summary.TotalEstimatedHours / 12m,
-                        Cost = row?.Cost ?? 0m
-                    };
-                })
-                .ToList();
-
-            var performanceRows = await projectsQuery
-                .Where(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value >= fiscalYearStart && p.EstimatedDueDate.Value <= fiscalYearEnd)
-                .GroupBy(p => new { p.EstimatedDueDate!.Value.Year, p.EstimatedDueDate!.Value.Month })
-                .Select(g => new
-                {
-                    Year = g.Key.Year,
-                    Month = g.Key.Month,
-                    Count = g.Count(),
-                    OtdCount = g.Count(p =>
-                        (p.Status == ProjectStatus.Done && p.EndDate.HasValue && p.EndDate.Value <= p.EstimatedDueDate!.Value) ||
-                        (p.Status != ProjectStatus.Done && p.EstimatedDueDate!.Value >= now)),
-                    Effectiveness = g.Average(p => (decimal?)p.ProgressPercentage) ?? 0m
-                })
+            var projectsByStatusRaw = await projectsQuery
+                .GroupBy(p => p.Status)
+                .Select(g => new { Status = g.Key, Count = g.Count() })
                 .ToListAsync();
 
-            var performanceTrend = fiscalMonths
-                .Select(monthDate =>
+            var projectsByStatus = projectsByStatusRaw
+                .Select(x => new DashboardLabelValueDto
                 {
-                    var row = performanceRows.FirstOrDefault(x => x.Year == monthDate.Year && x.Month == monthDate.Month);
-                    return new DashboardBiPerformanceTrendDto
-                    {
-                        Year = monthDate.Year,
-                        Month = monthDate.Month,
-                        MonthName = monthDate.ToString("MMM"),
-                        Otd = row is null || row.Count == 0 ? 0m : Math.Round(row.OtdCount * 100m / row.Count, 2),
-                        Effectiveness = CalculateTargetScore(row?.Effectiveness ?? 0m, DefaultKpiTargetPercentage)
-                    };
+                    Label = x.Status.ToString(),
+                    Value = x.Count
                 })
+                .OrderBy(x => x.Label)
                 .ToList();
 
-            var workloadByRole = await trackedHoursQuery
-                .GroupBy(h => new { h.User.RoleId, h.User.Role.Name })
-                .Select(g => new DashboardLabelValueDto
+            var projectsByPhaseRaw = await projectsQuery
+                .GroupBy(p => p.Phase)
+                .Select(g => new { Phase = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var projectsByPhase = projectsByPhaseRaw
+                .Select(x => new DashboardLabelValueDto
                 {
-                    Label = g.Key.Name,
-                    Value = g.Sum(x => x.TotalHours)
+                    Label = x.Phase.ToString(),
+                    Value = x.Count
+                })
+                .OrderBy(x => x.Label)
+                .ToList();
+
+            var projectsByProjectManagementTypeRaw = await projectsQuery
+                .GroupBy(p => p.ProjectManagementType)
+                .Select(g => new { ProjectManagementType = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var projectsByProjectManagementType = projectsByProjectManagementTypeRaw
+                .Select(x => new DashboardLabelValueDto
+                {
+                    Label = x.ProjectManagementType.ToString(),
+                    Value = x.Count
                 })
                 .OrderByDescending(x => x.Value)
-                .ToListAsync();
+                .ToList();
 
-            var workloadByDepartment = await trackedHoursQuery
-                .GroupBy(h => new { h.Project.DepartmentId, h.Project.Department!.Name })
-                .Select(g => new DashboardLabelValueDto
-                {
-                    Label = g.Key.Name,
-                    Value = g.Sum(x => x.TotalHours)
-                })
-                .OrderByDescending(x => x.Value)
-                .ToListAsync();
-
-            var workloadByBusinessUnit = await trackedHoursQuery
-                .SelectMany(h => h.Project.ProjectBusinessUnits.Select(pbu => new
-                {
-                    pbu.BusinessUnit.Name,
-                    h.TotalHours
-                }))
-                .GroupBy(x => x.Name)
+            var projectsByDepartment = await projectsQuery
+                .Where(p => p.Department != null && p.Department.Name.Trim() != PlaceholderDepartmentName)
+                .GroupBy(p => p.Department!.Name)
                 .Select(g => new DashboardLabelValueDto
                 {
                     Label = g.Key,
-                    Value = g.Sum(x => x.TotalHours)
-                })
-                .OrderByDescending(x => x.Value)
-                .ToListAsync();
-
-            var costSavingByDepartment = await projectsQuery
-                .GroupBy(p => new { p.DepartmentId, p.Department!.Name })
-                .Select(g => new DashboardLabelValueDto
-                {
-                    Label = g.Key.Name,
-                    Value = g.Sum(x => x.CostSaving)
-                })
-                .OrderByDescending(x => x.Value)
-                .ToListAsync();
-
-            var costSavingByBusinessUnit = await projectsQuery
-                .SelectMany(p => p.ProjectBusinessUnits.Select(pbu => new
-                {
-                    pbu.BusinessUnit.Name,
-                    p.CostSaving
-                }))
-                .GroupBy(x => x.Name)
-                .Select(g => new DashboardLabelValueDto
-                {
-                    Label = g.Key,
-                    Value = g.Sum(x => x.CostSaving)
+                    Value = g.Count()
                 })
                 .OrderByDescending(x => x.Value)
                 .ToListAsync();
 
             var projectsByPlant = await projectsQuery
-                .GroupBy(p => new { p.Department!.Plant.Id, p.Department.Plant.Name })
+                .GroupBy(p => p.Department!.Plant!.Name)
                 .Select(g => new DashboardLabelValueDto
                 {
-                    Label = g.Key.Name,
+                    Label = g.Key,
                     Value = g.Count()
                 })
                 .OrderByDescending(x => x.Value)
@@ -868,310 +619,28 @@ namespace PMHUB.Infrastructure.Repositories
                 .OrderByDescending(x => x.Value)
                 .ToListAsync();
 
-            var actualHoursByProject = trackedHoursQuery
-                .GroupBy(h => h.ProjectId)
-                .Select(g => new
-                {
-                    ProjectId = g.Key,
-                    ActualHours = g.Sum(x => x.TotalHours),
-                    TotalCost = g.Sum(x => x.TotalCost)
-                });
-
-            var estimatedVsActualRows = await projectsQuery
-                .GroupJoin(actualHoursByProject, p => p.Id, h => h.ProjectId, (p, hours) => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.EstimatedHours,
-                    p.Budget,
-                    p.ProgressPercentage,
-                    p.Status,
-                    ActualHours = hours.Select(x => (decimal?)x.ActualHours).FirstOrDefault() ?? 0m
-                })
-                .OrderByDescending(x => x.ActualHours)
-                .Take(Math.Max(topN, 20))
-                .ToListAsync();
-
-            var estimatedVsActualProjects = estimatedVsActualRows
-                .Select(x => new DashboardEstimatedVsActualProjectDto
-                {
-                    ProjectId = x.Id,
-                    ProjectName = x.Name,
-                    EstimatedHours = x.EstimatedHours,
-                    ActualHours = x.ActualHours,
-                    Budget = x.Budget,
-                    ProgressPercentage = x.ProgressPercentage,
-                    Status = x.Status.ToString()
-                })
-                .ToList();
-
-            var projectsOverEstimatedRows = await projectsQuery
-                .GroupJoin(actualHoursByProject, p => p.Id, h => h.ProjectId, (p, hours) => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.Status,
-                    p.Phase,
-                    p.ProgressPercentage,
-                    p.EstimatedHours,
-                    p.Budget,
-                    p.EstimatedDueDate,
-                    ActualHours = hours.Select(x => (decimal?)x.ActualHours).FirstOrDefault() ?? 0m,
-                    TotalCost = hours.Select(x => (decimal?)x.TotalCost).FirstOrDefault() ?? 0m
-                })
-                .Where(x => x.EstimatedHours > 0 && x.ActualHours > x.EstimatedHours)
-                .OrderByDescending(x => x.ActualHours - x.EstimatedHours)
-                .Take(topN)
-                .ToListAsync();
-
-            var projectsOverEstimatedHours = projectsOverEstimatedRows
-                .Select(x => ToTopProjectDto(x.Id, x.Name, x.Status, x.Phase, x.ProgressPercentage, x.ActualHours, x.EstimatedHours, x.Budget, x.TotalCost, x.EstimatedDueDate, now))
-                .ToList();
-
-            var delayedRows = await projectsQuery
-                .Where(p => p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value < now && p.Status != ProjectStatus.Done)
-                .OrderBy(p => p.EstimatedDueDate)
-                .Take(topN)
-                .Select(p => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.Status,
-                    p.Phase,
-                    p.ProgressPercentage,
-                    p.EstimatedHours,
-                    p.Budget,
-                    p.EstimatedDueDate
-                })
-                .ToListAsync();
-
-            var topDelayedProjects = delayedRows
-                .Select(x => ToTopProjectDto(x.Id, x.Name, x.Status, x.Phase, x.ProgressPercentage, 0m, x.EstimatedHours, x.Budget, 0m, x.EstimatedDueDate, now))
-                .ToList();
-
-            var onHoldRows = await projectsQuery
-                .Where(p => p.Status == ProjectStatus.OnHold)
-                .OrderByDescending(p => p.UpdatedAt ?? p.CreatedAt)
-                .Take(topN)
-                .Select(p => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.Status,
-                    p.Phase,
-                    p.ProgressPercentage,
-                    p.EstimatedHours,
-                    p.Budget,
-                    p.EstimatedDueDate
-                })
-                .ToListAsync();
-
-            var topOnHoldProjects = onHoldRows
-                .Select(x => ToTopProjectDto(x.Id, x.Name, x.Status, x.Phase, x.ProgressPercentage, 0m, x.EstimatedHours, x.Budget, 0m, x.EstimatedDueDate, now))
-                .ToList();
-
-            var dueSoonLimit = now.AddDays(14);
-            var dueSoonRows = await projectsQuery
-                .Where(p => p.EstimatedDueDate.HasValue &&
-                    p.EstimatedDueDate.Value >= now &&
-                    p.EstimatedDueDate.Value <= dueSoonLimit &&
-                    p.Status != ProjectStatus.Done)
-                .OrderBy(p => p.EstimatedDueDate)
-                .Take(topN)
-                .Select(p => new
-                {
-                    ProjectId = p.Id,
-                    ProjectName = p.Name,
-                    p.Status,
-                    p.Phase,
-                    p.EstimatedDueDate
-                })
-                .ToListAsync();
-
-            var dueSoonProjects = dueSoonRows
-                .Select(x => new DashboardAttentionProjectDto
-                {
-                    ProjectId = x.ProjectId,
-                    ProjectName = x.ProjectName,
-                    Status = x.Status.ToString(),
-                    Phase = x.Phase.ToString(),
-                    EstimatedDueDate = x.EstimatedDueDate,
-                    Value = x.EstimatedDueDate.HasValue ? EFDateDiffDays(now, x.EstimatedDueDate.Value) : 0m
-                })
-                .ToList();
-
-            var noActivityThreshold = now.AddDays(-30);
-            var noRecentActivityRows = await projectsQuery
-                .Where(p => p.Status != ProjectStatus.Done)
-                .Select(p => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.Status,
-                    p.Phase,
-                    p.EstimatedDueDate,
-                    LastLoggedAt = p.HourEntries.Max(h => (DateTime?)h.Date),
-                    TotalHours = p.HourEntries.Sum(h => (decimal?)h.TotalHours) ?? 0m
-                })
-                .Where(x => !x.LastLoggedAt.HasValue || x.LastLoggedAt.Value < noActivityThreshold)
-                .OrderBy(x => x.LastLoggedAt ?? DateTime.MinValue)
-                .Take(topN)
-                .ToListAsync();
-
-            var noRecentActivityProjects = noRecentActivityRows
-                .Select(x => new DashboardAttentionProjectDto
-                {
-                    ProjectId = x.Id,
-                    ProjectName = x.Name,
-                    Status = x.Status.ToString(),
-                    Phase = x.Phase.ToString(),
-                    EstimatedDueDate = x.EstimatedDueDate,
-                    LastLoggedAt = x.LastLoggedAt,
-                    TotalHours = x.TotalHours,
-                    Value = x.LastLoggedAt.HasValue ? EFDateDiffDays(x.LastLoggedAt.Value, now) : 999m
-                })
-                .ToList();
-
-            var openRoadblockRows = await _context.ProjectRoadblocks
-                .AsNoTracking()
-                .Where(r => projectIdsQuery.Contains(r.ProjectId) && r.Status == RoadblockStatus.Open)
-                .OrderBy(r => r.DueAt)
-                .Take(Math.Max(topN, 10))
-                .Select(r => new
-                {
-                    RoadblockId = r.Id,
-                    ProjectId = r.ProjectId,
-                    ProjectName = r.Project.Name,
-                    Title = r.Title,
-                    r.Status,
-                    EnteredAt = r.EnteredAt,
-                    r.DueAt
-                })
-                .ToListAsync();
-
-            var openRoadblocks = openRoadblockRows
-                .Select(x => new DashboardRoadblockDto
-                {
-                    RoadblockId = x.RoadblockId,
-                    ProjectId = x.ProjectId,
-                    ProjectName = x.ProjectName,
-                    Title = x.Title,
-                    Status = x.Status.ToString(),
-                    EnteredAt = x.EnteredAt,
-                    DueAt = x.DueAt,
-                    DelayDays = x.DueAt < now ? EFDateDiffDays(x.DueAt, now) : 0m
-                })
-                .ToList();
-
-            var riskRows = await projectsQuery
-                .Where(p => p.Status != ProjectStatus.Done)
-                .Select(p => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.Status,
-                    p.ProgressPercentage,
-                    p.EstimatedDueDate
-                })
-                .ToListAsync();
-
-            var riskMatrix = riskRows
-                .Select(x =>
-                {
-                    var delayDays = x.Status != ProjectStatus.Done &&
-                        x.EstimatedDueDate.HasValue &&
-                        x.EstimatedDueDate.Value < now
-                        ? EFDateDiffDays(x.EstimatedDueDate.Value, now)
-                        : 0m;
-                    var remainingProgress = Math.Max(100m - x.ProgressPercentage, 0m);
-                    return new DashboardRiskMatrixProjectDto
-                    {
-                        ProjectId = x.Id,
-                        ProjectName = x.Name,
-                        DelayDays = delayDays,
-                        RemainingProgress = remainingProgress,
-                        RiskScore = Math.Round(delayDays * 2m + remainingProgress, 2),
-                        Status = x.Status.ToString()
-                    };
-                })
-                .OrderByDescending(x => x.RiskScore)
-                .Take(Math.Max(topN, 20))
-                .ToList();
-
-            return new DashboardAdminBiDto
+            return new DashboardAdminLightweightMetrics
             {
-                Filters = new DashboardBiFiltersDto
-                {
-                    Year = query.Year,
-                    Month = query.Month,
-                    StartDate = query.StartDate,
-                    EndDate = query.EndDate,
-                    Ytd = query.Ytd,
-                    ProjectStatus = query.ProjectStatus,
-                    ProjectPhase = query.ProjectPhase,
-                    ProcessStatus = query.ProcessStatus,
-                    DepartmentId = query.DepartmentId,
-                    BusinessUnitId = query.BusinessUnitId,
-                    PlantId = query.PlantId,
-                    ProjectManagerId = query.ProjectManagerId,
-                    RoleId = query.RoleId,
-                    ProjectType = query.ProjectType,
-                    ProjectManagementType = query.ProjectManagementType,
-                    TopN = topN
-                },
-                Kpis = new DashboardBiKpisDto
+                Summary = new DashboardAdminSummaryDto
                 {
                     TotalProjects = totalProjects,
-                    TotalTrackedHours = extended.Summary.TotalTrackedHours,
-                    DelayedProjects = extended.Summary.DelayedProjects,
-                    DelayRate = delayRate,
-                    AverageOtd = extended.Summary.AverageOtd,
-                    AverageEffectiveness = extended.Summary.AverageEffectiveness,
-                    DoneProjectsBelowTarget = extended.Summary.DoneProjectsBelowTarget,
-                    DoneProjectsAboveTarget = extended.Summary.DoneProjectsAboveTarget,
-                    ActiveUsers = extended.Summary.ActiveUsers,
-                    TrackedHoursVariancePercent = trackedHoursVariancePercent,
-                    ProjectsKpiDelta = totalProjects - previousTotalProjects,
-                    TrackedHoursDeltaPercent = previousTrackedHours > 0
-                        ? Math.Round((extended.Summary.TotalTrackedHours - previousTrackedHours) * 100m / previousTrackedHours, 2)
-                        : 0m,
-                    DelayedProjectsDelta = extended.Summary.DelayedProjects - previousDelayedProjects
+                    AverageOtd = averageOtd,
+                    AverageEffectiveness = averageEffectiveness,
+                    DelayedProjects = delayedProjects,
+                    DoneProjectsAboveTarget = doneProjectsAboveTarget,
+                    DoneProjectsBelowTarget = doneProjectsBelowTarget
                 },
-                Charts = new DashboardBiChartsDto
+                DeliveryMetrics = new List<DashboardLabelValueDto>
                 {
-                    ProjectsByStatus = extended.PortfolioHealth.ProjectsByStatus,
-                    ProjectsByPhase = extended.PortfolioHealth.ProjectsByPhase,
-                    DelayRate = new List<DashboardLabelValueDto>
-                    {
-                        new() { Label = "Delayed", Value = delayRate },
-                        new() { Label = "On Time", Value = Math.Max(100m - delayRate, 0m) }
-                    },
-                    HoursByCategory = extended.Workload.CategoryBreakdown,
-                    HoursByStage = extended.Workload.HoursByStage,
-                    MonthlyHoursByCategory = extended.Workload.MonthlyHoursByCategory,
-                    MonthlyWorkloadTrend = monthlyWorkloadTrend,
-                    PerformanceTrend = performanceTrend,
-                    WorkloadByRole = workloadByRole,
-                    WorkloadByDepartment = workloadByDepartment,
-                    WorkloadByBusinessUnit = workloadByBusinessUnit,
-                    CostSavingByDepartment = costSavingByDepartment,
-                    CostSavingByBusinessUnit = costSavingByBusinessUnit,
-                    ProjectsByPlant = projectsByPlant,
-                    ProjectsByBusinessUnit = projectsByBusinessUnit,
-                    EstimatedVsActualProjects = estimatedVsActualProjects,
-                    RiskMatrix = riskMatrix
+                    new() { Label = "otd", Value = averageOtd },
+                    new() { Label = "effectiveness", Value = averageEffectiveness }
                 },
-                Tables = new DashboardBiTablesDto
-                {
-                    TopProjectsByHours = extended.TopProjects,
-                    ProjectsOverEstimatedHours = projectsOverEstimatedHours,
-                    TopDelayedProjects = topDelayedProjects,
-                    TopOnHoldProjects = topOnHoldProjects,
-                    DueSoonProjects = dueSoonProjects,
-                    NoRecentActivityProjects = noRecentActivityProjects,
-                    OpenRoadblocks = openRoadblocks
-                },
-                Alerts = extended.Alerts
+                ProjectsByBusinessUnit = projectsByBusinessUnit,
+                ProjectsByDepartment = projectsByDepartment,
+                ProjectsByPlant = projectsByPlant,
+                ProjectsByStatus = projectsByStatus,
+                ProjectsByPhase = projectsByPhase,
+                ProjectsByProjectManagementType = projectsByProjectManagementType
             };
         }
 
@@ -1249,10 +718,12 @@ namespace PMHUB.Infrastructure.Repositories
                             x.BusinessUnitName,
                             projectLookup[x.ProjectId]))),
                 Departments = BuildGroups(
-                    projectRows.Select(p => new DashboardProjectGroupItem(
-                        p.DepartmentId.ToString(),
-                        p.DepartmentName,
-                        projectLookup[p.Id]))),
+                    projectRows
+                        .Where(p => !IsPlaceholderDepartment(p.DepartmentName))
+                        .Select(p => new DashboardProjectGroupItem(
+                            p.DepartmentId.ToString(),
+                            p.DepartmentName,
+                            projectLookup[p.Id]))),
                 Plants = BuildGroups(
                     projectRows
                         .Where(p => p.PlantId.HasValue)
@@ -1371,6 +842,7 @@ namespace PMHUB.Infrastructure.Repositories
                 .ToListAsync();
 
             var departmentRows = await projectsQuery
+                .Where(p => p.Department != null && p.Department.Name.Trim() != PlaceholderDepartmentName)
                 .GroupBy(p => new { p.DepartmentId, p.Department!.Name })
                 .Select(g => new
                 {
@@ -1382,6 +854,7 @@ namespace PMHUB.Infrastructure.Repositories
 
             var allDepartments = await _context.Departments
                 .AsNoTracking()
+                .Where(d => d.Name.Trim() != PlaceholderDepartmentName)
                 .Select(d => new { d.Id, Label = d.Name })
                 .ToListAsync();
 
@@ -1494,6 +967,7 @@ namespace PMHUB.Infrastructure.Repositories
         {
             return items
                 .Where(x => !string.IsNullOrWhiteSpace(x.Id))
+                .Where(x => !IsPlaceholderDepartment(x.Label))
                 .GroupBy(x => new { x.Id, x.Label })
                 .Select(g => new DashboardProjectGroupDto
                 {
@@ -1557,6 +1031,7 @@ namespace PMHUB.Infrastructure.Repositories
             Func<TOption, string> labelSelector)
         {
             return options
+                .Where(option => !IsPlaceholderDepartment(labelSelector(option)))
                 .Select(option =>
                 {
                     var id = idSelector(option);
@@ -1619,6 +1094,18 @@ namespace PMHUB.Infrastructure.Repositories
             public int ProgressPercentage { get; set; }
             public decimal? CurrentValue { get; set; }
             public decimal? TargetValue { get; set; }
+        }
+
+        private sealed class DashboardAdminLightweightMetrics
+        {
+            public DashboardAdminSummaryDto Summary { get; set; } = new();
+            public List<DashboardLabelValueDto> DeliveryMetrics { get; set; } = new();
+            public List<DashboardLabelValueDto> ProjectsByBusinessUnit { get; set; } = new();
+            public List<DashboardLabelValueDto> ProjectsByDepartment { get; set; } = new();
+            public List<DashboardLabelValueDto> ProjectsByPlant { get; set; } = new();
+            public List<DashboardLabelValueDto> ProjectsByStatus { get; set; } = new();
+            public List<DashboardLabelValueDto> ProjectsByPhase { get; set; } = new();
+            public List<DashboardLabelValueDto> ProjectsByProjectManagementType { get; set; } = new();
         }
 
         private sealed class DashboardProjectDistributionRow
@@ -1816,6 +1303,9 @@ namespace PMHUB.Infrastructure.Repositories
         {
             return Enum.TryParse(value, true, out type);
         }
+
+        private static bool IsPlaceholderDepartment(string? name) =>
+            string.Equals(name?.Trim(), PlaceholderDepartmentName, StringComparison.Ordinal);
 
         private static DashboardQueryDto ResolvePreviousPeriodQuery(DashboardQueryDto query)
         {

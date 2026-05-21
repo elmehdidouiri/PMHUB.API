@@ -6,6 +6,7 @@ namespace PMHUB.Application.IServices
     {
         Task<HourBookingReminderResultDto> SendWeeklyHourAllocationRemindersAsync(CancellationToken cancellationToken = default);
         Task<IEnumerable<AdminHourBookingNotificationDto>> GetUsersWithoutRecentBookingsAsync(CancellationToken cancellationToken = default);
+        Task<IEnumerable<AdminMonthlyTargetNotificationDto>> GetUsersBelowMonthlyTargetAsync(int? year = null, int? month = null, CancellationToken cancellationToken = default);
         Task SendSupervisorReminderAsync(Guid userId, CancellationToken cancellationToken = default);
     }
 }

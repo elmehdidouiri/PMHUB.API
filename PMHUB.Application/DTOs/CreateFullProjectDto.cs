@@ -12,8 +12,8 @@ public class CreateFullProjectDto
     [StringLength(500)]
     public string? Description { get; set; }
 
-    [Required(ErrorMessage = "Department is required.")]
     public Guid? DepartmentId { get; set; }
+    public ICollection<Guid> DepartmentIds { get; set; } = new List<Guid>();
 
     [Range(0, double.MaxValue)]
     public decimal? Budget { get; set; }

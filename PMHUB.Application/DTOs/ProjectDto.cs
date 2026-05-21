@@ -57,8 +57,10 @@ namespace PMHUB.Application.DTOs
         public string? NextSteps { get; set; }
         public string? Enhancements { get; set; }
 
-         public Guid DepartmentId { get; set; }
+        public Guid DepartmentId { get; set; }
+        public ICollection<Guid> DepartmentIds { get; set; } = new List<Guid>();
         public string DepartmentName { get; set; } = string.Empty;
+        public ICollection<DepartmentDto> Departments { get; set; } = new List<DepartmentDto>();
         public string PlantName { get; set; } = string.Empty;
 
          public Guid? ParentProjectId { get; set; }

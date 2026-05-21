@@ -12,6 +12,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 {
     public class AnalyticsRepository : IAnalyticsRepository
     {
+        private const string PlaceholderDepartmentName = "-";
+
         private static readonly IReadOnlyDictionary<string, decimal> DefaultKpiTargets =
             new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
             {
@@ -189,6 +191,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     .ToListAsync(),
                 Departments = await _context.Departments
                     .AsNoTracking()
+                    .Where(d => d.Name.Trim() != PlaceholderDepartmentName)
                     .OrderBy(d => d.Name)
                     .Select(d => new AnalyticsOptionDto<Guid>
                     {
