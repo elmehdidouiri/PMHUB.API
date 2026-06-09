@@ -19,7 +19,7 @@ namespace PMHUB.Application.Services.Implementation
         private readonly IRepository<InternHourEntry> _internHourEntryRepository;
         private readonly IEmailService _emailService;
         private readonly HourBookingReminderSettings _settings;
-        private readonly CompanyStandards _companyStandards;
+        private readonly ITargetSettingsService _targetSettingsService;
         private readonly ILogger<HourBookingReminderService> _logger;
 
         public HourBookingReminderService(
@@ -30,7 +30,7 @@ namespace PMHUB.Application.Services.Implementation
             IRepository<InternHourEntry> internHourEntryRepository,
             IEmailService emailService,
             IOptions<HourBookingReminderSettings> settings,
-            IOptions<CompanyStandards> companyStandards,
+            ITargetSettingsService targetSettingsService,
             ILogger<HourBookingReminderService> logger)
         {
             _userRepository = userRepository;
@@ -40,7 +40,7 @@ namespace PMHUB.Application.Services.Implementation
             _internHourEntryRepository = internHourEntryRepository;
             _emailService = emailService;
             _settings = settings.Value;
-            _companyStandards = companyStandards.Value;
+            _targetSettingsService = targetSettingsService;
             _logger = logger;
         }
 
@@ -52,7 +52,8 @@ namespace PMHUB.Application.Services.Implementation
             var currentWeekStart = GetWeekStart(today);
             var weekStart = currentWeekStart.AddDays(-7);
             var weekEnd = currentWeekStart.AddDays(-1);
-            var expectedWeeklyHours = _companyStandards.HoursPerDay * 5m;
+            var companyStandards = await _targetSettingsService.GetCompanyStandardsAsync();
+            var expectedWeeklyHours = companyStandards.HoursPerDay * 5m;
 
             foreach (var user in users)
             {
@@ -141,7 +142,8 @@ namespace PMHUB.Application.Services.Implementation
             var resolvedMonth = month is >= 1 and <= 12 ? month.Value : today.Month;
             var monthStart = new DateTime(resolvedYear, resolvedMonth, 1);
             var monthEnd = monthStart.AddMonths(1).AddDays(-1);
-            var targetHours = _companyStandards.MonthlyHoursTarget;
+            var companyStandards = await _targetSettingsService.GetCompanyStandardsAsync();
+            var targetHours = companyStandards.MonthlyHoursTarget;
             var users = (await _userRepository.GetActiveApprovedNormalUsersAsync()).ToList();
             var notifications = new List<AdminMonthlyTargetNotificationDto>();
 

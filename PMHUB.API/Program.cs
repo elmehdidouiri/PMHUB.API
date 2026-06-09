@@ -151,6 +151,7 @@ builder.Services.AddScoped<IHoursAllocationDashboardService, HoursAllocationDash
 builder.Services.AddScoped<IInternStatisticsService, InternStatisticsService>();
 builder.Services.AddScoped<IHourBookingReminderService, HourBookingReminderService>();
 builder.Services.AddScoped<IHeaderNotificationService, HeaderNotificationService>();
+builder.Services.AddScoped<ITargetSettingsService, TargetSettingsService>();
 builder.Services.AddHostedService<WeeklyHourBookingReminderHostedService>();
 
 builder.Services.Configure<FormOptions>(options =>

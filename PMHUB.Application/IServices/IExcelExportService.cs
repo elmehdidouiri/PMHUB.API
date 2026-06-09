@@ -12,6 +12,6 @@ namespace PMHUB.Application.IServices
         string GenerateMonthlyExcel(IEnumerable<ProjectExportDto> data, int year, int month);
 
         string GenerateYearlyExcel(IEnumerable<ProjectExportDto> data, int companyYear);
-        string GenerateProjectsExcel(IEnumerable<ProjectSummaryDto> data);
+        string GenerateProjectsExcel(IEnumerable<ProjectSummaryDto> data, string? exportType = null, int? fiscalYear = null);
     }
 }

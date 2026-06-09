@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PMHUB.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using PMHUB.Infrastructure.Persistence;
 namespace PMHUB.Infrastructure.Migrations
 {
     [DbContext(typeof(PMHubDbContext))]
-    partial class PMHubDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260609092241_InitialCreate00001")]
+    partial class InitialCreate00001
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

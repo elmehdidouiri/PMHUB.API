@@ -5,6 +5,8 @@ namespace PMHUB.Application.DTOs
         public int? Month { get; set; }
         public int? Year { get; set; }
         public int? FiscalYear { get; set; }
+        public string? PeriodMode { get; set; }
+        public string? QuickSelect { get; set; }
         public Guid? UserId { get; set; }
         public Guid? ProjectId { get; set; }
         public Guid? DepartmentId { get; set; }

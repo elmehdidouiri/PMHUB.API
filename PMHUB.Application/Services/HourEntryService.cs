@@ -22,6 +22,7 @@ namespace PMHUB.Application.Services.Implementation
         private readonly IUserRepository _userRepository;
         private readonly IRepository<UserHourlyRate> _userHourlyRateRepository;
         private readonly IInternAllocationRepository _internAllocationRepository;
+        private readonly ITargetSettingsService _targetSettingsService;
         private readonly ILogger<HourEntryService> _logger;
 
         public HourEntryService(
@@ -30,6 +31,7 @@ namespace PMHUB.Application.Services.Implementation
             IUserRepository userRepository,
             IRepository<UserHourlyRate> userHourlyRateRepository,
             IInternAllocationRepository internAllocationRepository,
+            ITargetSettingsService targetSettingsService,
             ILogger<HourEntryService> logger)
         {
             _hourEntryRepository = hourEntryRepository;
@@ -37,6 +39,7 @@ namespace PMHUB.Application.Services.Implementation
             _userRepository = userRepository;
             _userHourlyRateRepository = userHourlyRateRepository;
             _internAllocationRepository = internAllocationRepository;
+            _targetSettingsService = targetSettingsService;
             _logger = logger;
         }
 
@@ -300,9 +303,9 @@ namespace PMHUB.Application.Services.Implementation
             var endDate = startDate.AddMonths(1).AddDays(-1);
             var today = DateTime.Today;
             
-            // Fixed target as per user requirement
-            var workingDays = 22;
-            var targetHours = 161.5m; 
+            var standards = await _targetSettingsService.GetCompanyStandardsAsync();
+            var workingDays = standards.WorkingDaysPerMonth;
+            var targetHours = standards.MonthlyHoursTarget;
 
             var entries = await _hourEntryRepository.FindWithIncludesAsync(h => h.UserId == userId && h.Date >= startDate && h.Date <= endDate);
             var entriesList = entries.ToList();

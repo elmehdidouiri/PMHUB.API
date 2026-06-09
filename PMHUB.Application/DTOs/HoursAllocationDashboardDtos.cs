@@ -74,7 +74,6 @@ namespace PMHUB.Application.DTOs
     public class HoursAllocationSummaryDto
     {
         public decimal TotalHours { get; set; }
-        public int ActiveUsers { get; set; }
         public int Projects { get; set; }
         public int Allocations { get; set; }
         public decimal AverageUtilization { get; set; }

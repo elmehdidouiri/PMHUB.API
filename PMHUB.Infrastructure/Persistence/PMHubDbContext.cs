@@ -61,6 +61,8 @@ namespace PMHUB.Infrastructure.Persistence
         public DbSet<ProjectMember> ProjectMembers { get; set; } = null!;
         public DbSet<UserHourlyRate> UserHourlyRates { get; set; }
         public DbSet<Holiday> Holidays { get; set; }
+        public DbSet<CompanyTargetSettings> CompanyTargetSettings { get; set; } = null!;
+        public DbSet<KpiTargetSetting> KpiTargetSettings { get; set; } = null!;
         // ── Audit  
         public DbSet<AuditLog> AuditLogs { get; set; } = null!;
 
@@ -449,6 +451,22 @@ namespace PMHUB.Infrastructure.Persistence
 
             builder.Entity<Holiday>()
                 .HasIndex(h => new { h.Date, h.Country });
+
+            builder.Entity<CompanyTargetSettings>()
+                .Property(t => t.HoursPerDay)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<CompanyTargetSettings>()
+                .Property(t => t.AnnualHoursTarget)
+                .HasColumnType("decimal(18,2)");
+
+            builder.Entity<KpiTargetSetting>()
+                .HasIndex(t => t.Name)
+                .IsUnique();
+
+            builder.Entity<KpiTargetSetting>()
+                .Property(t => t.TargetValue)
+                .HasColumnType("decimal(18,2)");
 
             // ── Index performances  
             builder.Entity<Department>().HasIndex(d => d.BusinessUnitId);

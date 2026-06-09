@@ -175,12 +175,60 @@ namespace PMHUB.Application.Mappings
                     .Where(name => !string.IsNullOrWhiteSpace(name))
                     .Distinct()),
                 Sponsor = p.Sponsor ?? string.Empty,
+                CostCenter = p.CostCenter ?? string.Empty,
                 EstimatedHours = p.EstimatedHours,
                 ActualHours = p.ActualHours,
+                TotalBookingHoursCurrentMonth = CalculateInternBookingHoursCurrentMonth(p),
+                TotalBookingHoursFiscalYtd = CalculateInternBookingHoursFiscalYtd(p),
+                FiscalYtdMonthlyBookingHours = CalculateInternBookingHoursByMonth(p),
                 IsDataComplete = missingFields.Count == 0,
                 DataCompletionPercentage = CalculateCompletionPercentage(completionFields),
                 MissingFields = missingFields
             };
+        }
+
+        private static decimal CalculateInternBookingHoursCurrentMonth(Project project)
+        {
+            var today = DateTime.Today;
+            var monthStart = new DateTime(today.Year, today.Month, 1);
+
+            return SumInternBookingHours(project, monthStart, today);
+        }
+
+        private static decimal CalculateInternBookingHoursFiscalYtd(Project project)
+        {
+            var today = DateTime.Today;
+            var fiscalYearStart = GetFiscalYearStart(today);
+
+            return SumInternBookingHours(project, fiscalYearStart, today);
+        }
+
+        private static ICollection<ProjectMonthlyBookingHoursDto> CalculateInternBookingHoursByMonth(Project project)
+        {
+            return project.InternAllocations
+                .SelectMany(allocation => allocation.InternHourEntries)
+                .GroupBy(entry => new DateTime(entry.Date.Year, entry.Date.Month, 1))
+                .Select(group => new ProjectMonthlyBookingHoursDto
+                {
+                    MonthStart = group.Key,
+                    Hours = group.Sum(entry => entry.Hours)
+                })
+                .ToList();
+        }
+
+        private static DateTime GetFiscalYearStart(DateTime today)
+        {
+            return today.Month < 10
+                ? new DateTime(today.Year - 1, 10, 1)
+                : new DateTime(today.Year, 10, 1);
+        }
+
+        private static decimal SumInternBookingHours(Project project, DateTime startDate, DateTime endDate)
+        {
+            return project.InternAllocations
+                .SelectMany(allocation => allocation.InternHourEntries)
+                .Where(entry => entry.Date.Date >= startDate && entry.Date.Date <= endDate)
+                .Sum(entry => entry.Hours);
         }
 
         private static IEnumerable<CompletionField> GetCompletionFields(Project p)

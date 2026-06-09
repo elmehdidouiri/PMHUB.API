@@ -21,4 +21,18 @@ namespace PMHUB.Application.DTOs
         public string? RoleName { get; set; }
         public bool? IsActive { get; set; }
     }
+
+    public class ChangePasswordDto
+    {
+        [Required(ErrorMessage = "Current password is required.")]
+        public string CurrentPassword { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Password is required.")]
+        [MinLength(6, ErrorMessage = "Password must be at least 6 characters long.")]
+        public string NewPassword { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Password confirmation is required.")]
+        [Compare(nameof(NewPassword), ErrorMessage = "Password confirmation does not match.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
 }

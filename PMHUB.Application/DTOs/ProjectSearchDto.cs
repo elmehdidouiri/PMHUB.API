@@ -21,6 +21,8 @@ namespace PMHUB.Application.DTOs
         public DateTime? EndDate { get; set; }
         public int? Year { get; set; }
         public int? Month { get; set; }
+        public int? FiscalYear { get; set; }
+        public string? ExportType { get; set; }
         public bool All { get; set; } = false;
         public bool IncompleteOnly { get; set; } = false;
     }

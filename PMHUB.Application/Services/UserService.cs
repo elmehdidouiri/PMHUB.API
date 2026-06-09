@@ -160,6 +160,28 @@ namespace PMHUB.Application.Services
             _logger.LogInformation("Utilisateur {UserId} mis à jour avec succès", dto.Id);
         }
 
+        public async Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto)
+        {
+            _logger.LogInformation("Changement du mot de passe pour l'utilisateur {UserId}", userId);
+
+            var user = await _userRepository.GetByIdAsync(userId)
+                ?? throw new NotFoundException("User", userId);
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                throw new BadRequestException("Current password is incorrect.");
+
+            if (!string.Equals(dto.NewPassword, dto.ConfirmPassword, StringComparison.Ordinal))
+                throw new BadRequestException("Password confirmation does not match.");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            user.UpdatedAt = DateTime.UtcNow;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Mot de passe mis à jour avec succès pour l'utilisateur {UserId}", userId);
+        }
+
         // ── DELETE 
         public async Task DeleteUserAsync(Guid userId)
         {

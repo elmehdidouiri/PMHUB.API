@@ -270,7 +270,7 @@ namespace PMHUB.Infrastructure.Services
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(_settings.Host, _settings.Port,
-                SecureSocketOptions.StartTls);
+                SecureSocketOptions.Auto);
             await smtp.AuthenticateAsync(_settings.Username, _settings.Password);
             await smtp.SendAsync(message);
             await smtp.DisconnectAsync(true);

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.IRepositories;
+using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
 using PMHUB.Domain.Enums;
 using PMHUB.Infrastructure.Persistence;
@@ -24,12 +25,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             };
 
         private readonly PMHubDbContext _context;
-        private readonly CompanyStandards _standards;
+        private readonly ITargetSettingsService _targetSettingsService;
+        private CompanyStandards _standards;
 
-        public AnalyticsRepository(PMHubDbContext context, IOptions<CompanyStandards> standards)
+        public AnalyticsRepository(PMHubDbContext context, IOptions<CompanyStandards> standards, ITargetSettingsService targetSettingsService)
         {
             _context = context;
             _standards = standards.Value;
+            _targetSettingsService = targetSettingsService;
         }
 
         public async Task<AnalyticsDashboardDto> GetDashboardAsync(AnalyticsQueryDto query)
@@ -60,6 +63,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             bool includeKpis,
             bool includeHours)
         {
+            await LoadTargetSettingsAsync();
+
             var period = ResolvePeriod(query);
             var startDate = period.StartDate.ToDateTime(TimeOnly.MinValue);
             var endDate = period.EndDate.ToDateTime(TimeOnly.MaxValue);
@@ -69,7 +74,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var selectedHoursQuery = BuildHoursQuery(projectIds, query.UserId, startDate, endDate);
 
             var selectedHours = await selectedHoursQuery.ToListAsync();
-            var selectedKpis = await BuildKpiQuery(projectIds, startDate, endDate).ToListAsync();
+            var selectedKpis = await BuildKpiQuery(projectIds, endDate).ToListAsync();
 
             var totalProjects = await projectsQuery.CountAsync();
             var activeTeamMembers = selectedHours.Select(h => h.UserId).Distinct().Count();
@@ -83,14 +88,23 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 {
                     Id = p.Id,
                     Status = p.Status,
-                    ProgressPercentage = p.ProgressPercentage,
+                    StartDate = p.StartDate,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours,
                     EndDate = p.EndDate,
                     EstimatedDueDate = p.EstimatedDueDate
                 })
                 .ToListAsync();
 
-            var projectsWithData = projectIds
-                .Where(id => selectedHours.Any(h => h.ProjectId == id) || selectedKpis.Any(k => k.ProjectId == id))
+            var periodProjectIds = ResolvePeriodProjectIds(projectMetricRows, selectedHours, selectedKpis, startDate, endDate);
+            var periodProjectMetrics = projectMetricRows
+                .Where(p => periodProjectIds.Contains(p.Id))
+                .ToList();
+            var periodKpis = selectedKpis
+                .Where(k => periodProjectIds.Contains(k.ProjectId))
+                .ToList();
+
+            var projectsWithData = periodProjectIds
                 .Distinct()
                 .Count();
 
@@ -113,9 +127,9 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 Period = period,
                 Summary = new AnalyticsSummaryDto
                 {
-                    AverageEffectiveness = CalculateEffectiveness(projectMetricRows, selectedKpis),
-                    AverageOtd = CalculateOtd(projectMetricRows, selectedKpis, endDate),
-                    AverageCsat = CalculateNamedKpiAverage(selectedKpis, "CSA"),
+                    AverageEffectiveness = CalculateEffectiveness(periodProjectMetrics, periodKpis),
+                    AverageOtd = CalculateOtd(periodProjectMetrics, periodKpis, endDate),
+                    AverageCsat = CalculateNamedKpiAverage(periodKpis, "CSA"),
                     TotalProjects = totalProjects,
                     ProjectsWithData = projectsWithData,
                     TotalHours = Math.Round(totalHours, 2),
@@ -139,6 +153,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         public async Task<AnalyticsFiltersDto> GetFiltersAsync()
         {
+            await LoadTargetSettingsAsync();
+
             var fiscalYearStartMonth = GetFiscalYearStartMonth();
             var currentFiscalYear = ResolveFiscalYear(DateTime.UtcNow.Year, DateTime.UtcNow.Month, fiscalYearStartMonth);
             var projectYears = await _context.Projects
@@ -267,12 +283,12 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             return query;
         }
 
-        private IQueryable<KPI> BuildKpiQuery(IEnumerable<Guid> projectIds, DateTime startDate, DateTime endDate)
+        private IQueryable<KPI> BuildKpiQuery(IEnumerable<Guid> projectIds, DateTime endDate)
         {
             var ids = projectIds.ToList();
             return _context.KPIs
                 .AsNoTracking()
-                .Where(k => ids.Contains(k.ProjectId) && k.CreatedAt >= startDate && k.CreatedAt <= endDate);
+                .Where(k => ids.Contains(k.ProjectId) && k.CreatedAt <= endDate);
         }
 
         private AnalyticsPeriodDto ResolvePeriod(AnalyticsQueryDto query)
@@ -280,11 +296,26 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var today = DateTime.UtcNow.Date;
             var month = query.Month is >= 1 and <= 12 ? query.Month.Value : today.Month;
             var fiscalYearStartMonth = GetFiscalYearStartMonth();
-            var fiscalYear = query.FiscalYear.GetValueOrDefault(
-                query.Year.GetValueOrDefault(ResolveFiscalYear(today.Year, today.Month, fiscalYearStartMonth)));
-            var calendarYear = month >= fiscalYearStartMonth
-                ? fiscalYear - (fiscalYearStartMonth == 1 ? 0 : 1)
-                : fiscalYear;
+            var isMonthMode = query.Month.HasValue &&
+                (IsMode(query.PeriodMode, "month") || IsMode(query.QuickSelect, "month") || query.Year.HasValue);
+
+            int fiscalYear;
+            int calendarYear;
+
+            if (isMonthMode && query.Year.HasValue && query.Year.Value > 0)
+            {
+                calendarYear = query.Year.Value;
+                fiscalYear = ResolveFiscalYear(calendarYear, month, fiscalYearStartMonth);
+            }
+            else
+            {
+                fiscalYear = query.FiscalYear.GetValueOrDefault(
+                    query.Year.GetValueOrDefault(ResolveFiscalYear(today.Year, today.Month, fiscalYearStartMonth)));
+                calendarYear = month >= fiscalYearStartMonth
+                    ? fiscalYear - (fiscalYearStartMonth == 1 ? 0 : 1)
+                    : fiscalYear;
+            }
+
             var fiscalYearStartDate = GetFiscalYearStartDate(fiscalYear, fiscalYearStartMonth);
             var fiscalYearEndDate = fiscalYearStartDate.AddYears(1).AddTicks(-1);
             var startDate = query.Month.HasValue
@@ -324,6 +355,11 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 : year;
         }
 
+        private static bool IsMode(string? value, string expected)
+        {
+            return string.Equals(value?.Trim(), expected, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static DateTime GetFiscalYearStartDate(int fiscalYear, int fiscalYearStartMonth)
         {
             var startYear = fiscalYear - (fiscalYearStartMonth == 1 ? 0 : 1);
@@ -360,11 +396,15 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     var kpisCreatedInMonth = kpisUpToMonth
                         .Where(k => k.CreatedAt >= period.Start)
                         .ToList();
+                    var activeProjectIds = projects
+                        .Where(p => IsProjectInPeriod(p, period.Start, period.End))
+                        .Select(p => p.Id);
                     var monthProjectIds = hours
                         .Where(h => h.Date >= period.Start && h.Date <= period.End)
                         .Where(h => h.ProjectId.HasValue)
                         .Select(h => h.ProjectId!.Value)
                         .Concat(kpisCreatedInMonth.Select(k => k.ProjectId))
+                        .Concat(activeProjectIds)
                         .Distinct()
                         .ToList();
                     var monthKpis = kpisUpToMonth
@@ -383,6 +423,27 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     };
                 })
                 .ToList();
+        }
+
+        private static HashSet<Guid> ResolvePeriodProjectIds(
+            List<ProjectMetricRow> projects,
+            List<HourEntry> hours,
+            List<KPI> kpis,
+            DateTime startDate,
+            DateTime endDate)
+        {
+            return projects
+                .Where(p => IsProjectInPeriod(p, startDate, endDate))
+                .Select(p => p.Id)
+                .Concat(hours.Where(h => h.ProjectId.HasValue).Select(h => h.ProjectId!.Value))
+                .Concat(kpis.Where(k => k.CreatedAt >= startDate && k.CreatedAt <= endDate).Select(k => k.ProjectId))
+                .ToHashSet();
+        }
+
+        private static bool IsProjectInPeriod(ProjectMetricRow project, DateTime startDate, DateTime endDate)
+        {
+            return project.StartDate <= endDate &&
+                (!project.EndDate.HasValue || project.EndDate.Value >= startDate);
         }
 
         private static List<AnalyticsMonthlyHoursByCategoryDto> BuildMonthlyHoursByCategory(
@@ -498,7 +559,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             if (kpiAverage > 0)
                 return kpiAverage;
 
-            return CalculateAverage(projects.Select(p => CalculateTargetScore(p.ProgressPercentage, "Effectiveness")));
+            return CalculateAverage(projects.Select(p => CalculateEffectivenessPercentage(p.EstimatedHours, p.ActualHours)));
         }
 
         private static decimal CalculateNamedKpiAverage(List<KPI> kpis, string name)
@@ -548,6 +609,13 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             if (string.Equals(name, "OTD", StringComparison.OrdinalIgnoreCase))
                 return NormalizePercentage(rawValue.Value);
 
+            if (string.Equals(name, "Effectiveness", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CSA", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CSAT", StringComparison.OrdinalIgnoreCase))
+            {
+                return NormalizePercentage(rawValue.Value);
+            }
+
             var target = kpi.TargetValue > 0
                 ? kpi.TargetValue
                 : GetDefaultKpiTarget(kpi.Name);
@@ -556,11 +624,6 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 return NormalizePercentage(rawValue.Value);
 
             return CalculateTargetScore(rawValue.Value, target);
-        }
-
-        private static decimal CalculateTargetScore(decimal rawValue, string targetName)
-        {
-            return CalculateTargetScore(rawValue, GetDefaultKpiTarget(targetName));
         }
 
         private static bool IsMatchingKpiName(string actualName, string requestedName)
@@ -595,6 +658,11 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         private static decimal CalculatePercentage(decimal numerator, decimal denominator)
         {
             return denominator <= 0 ? 0m : NormalizePercentage(numerator * 100m / denominator);
+        }
+
+        private static decimal CalculateEffectivenessPercentage(decimal estimatedHours, decimal actualHours)
+        {
+            return actualHours <= 0 ? 0m : NormalizePercentage(estimatedHours * 100m / actualHours);
         }
 
         private static decimal CalculateAverage(IEnumerable<decimal> values)
@@ -632,11 +700,18 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             return Enum.TryParse(value, true, out phase);
         }
 
+        private async Task LoadTargetSettingsAsync()
+        {
+            _standards = await _targetSettingsService.GetCompanyStandardsAsync();
+        }
+
         private class ProjectMetricRow
         {
             public Guid Id { get; set; }
             public ProjectStatus Status { get; set; }
-            public int ProgressPercentage { get; set; }
+            public DateTime StartDate { get; set; }
+            public decimal EstimatedHours { get; set; }
+            public decimal ActualHours { get; set; }
             public DateTime? EndDate { get; set; }
             public DateTime? EstimatedDueDate { get; set; }
         }

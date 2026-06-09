@@ -33,6 +33,11 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(p => p.StrategicCriteria)
                 .Include(p => p.KPIs);
 
+        private IQueryable<Project> WithExportIncludes() =>
+            WithSummaryIncludes()
+                .Include(p => p.InternAllocations)
+                    .ThenInclude(ia => ia.InternHourEntries);
+
         private IQueryable<Project> WithIncludes() =>
             _context.Projects
                 .AsSplitQuery()
@@ -201,6 +206,13 @@ namespace PMHUB.Infrastructure.Repositories
         public async Task<IEnumerable<Project>> GetFilteredAsync(ProjectSearchDto query)
         {
             var queryable = WithSummaryIncludes().AsNoTracking();
+            queryable = ApplyProjectFilters(queryable, query);
+            return await queryable.ToListAsync();
+        }
+
+        public async Task<IEnumerable<Project>> GetFilteredForExportAsync(ProjectSearchDto query)
+        {
+            var queryable = WithExportIncludes().AsNoTracking();
             queryable = ApplyProjectFilters(queryable, query);
             return await queryable.ToListAsync();
         }

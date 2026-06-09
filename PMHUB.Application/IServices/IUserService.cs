@@ -13,7 +13,8 @@ namespace PMHUB.Application.IServices
         Task<IEnumerable<UserDto>> GetAllAsync();
         Task<IEnumerable<UserDto>> GetTeamMemberCandidatesAsync();
         Task<IEnumerable<UserDto>> GetByRoleIdAsync(Guid roleId);
-        Task UpdateUserAsync(UpdateUserDto dto); 
+        Task UpdateUserAsync(UpdateUserDto dto);
+        Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto);
         Task DeleteUserAsync(Guid userId);
         Task<bool> ValidateLoginAsync(string email, string password);
 

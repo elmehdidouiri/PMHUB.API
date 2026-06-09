@@ -28,10 +28,20 @@ namespace PMHUB.Application.DTOs
         public ICollection<string> DepartmentNames { get; set; } = new List<string>();
         public string PlantName { get; set; } = string.Empty;
         public string Sponsor { get; set; } = string.Empty;
+        public string CostCenter { get; set; } = string.Empty;
         public decimal EstimatedHours { get; set; }
         public decimal ActualHours { get; set; }
+        public decimal TotalBookingHoursCurrentMonth { get; set; }
+        public decimal TotalBookingHoursFiscalYtd { get; set; }
+        public ICollection<ProjectMonthlyBookingHoursDto> FiscalYtdMonthlyBookingHours { get; set; } = new List<ProjectMonthlyBookingHoursDto>();
         public bool IsDataComplete { get; set; }
         public int DataCompletionPercentage { get; set; }
         public ICollection<string> MissingFields { get; set; } = new List<string>();
+    }
+
+    public class ProjectMonthlyBookingHoursDto
+    {
+        public DateTime MonthStart { get; set; }
+        public decimal Hours { get; set; }
     }
 }

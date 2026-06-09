@@ -28,6 +28,7 @@ namespace PMHUB.Application.Services
         private readonly IRepository<Intern> _internRepository;
         private readonly IRepository<InternHourEntry> _internHourEntryRepository;
         private readonly ILogger<ProjectService> _logger;
+        private readonly ITargetSettingsService _targetSettingsService;
 
         private readonly IRepository<Role> _roleRepository;
         private readonly IExcelExportService _excelExportService;
@@ -49,6 +50,7 @@ namespace PMHUB.Application.Services
             IRepository<InternHourEntry> internHourEntryRepository,
             IRepository<Role> roleRepository, 
             IExcelExportService excelExportService,
+            ITargetSettingsService targetSettingsService,
             ILogger<ProjectService> logger)
         {
             _projectRepository = projectRepository;
@@ -67,6 +69,7 @@ namespace PMHUB.Application.Services
             _internHourEntryRepository = internHourEntryRepository;
             _roleRepository = roleRepository;
             _excelExportService = excelExportService;
+            _targetSettingsService = targetSettingsService;
             _logger = logger;
 
 
@@ -165,6 +168,7 @@ namespace PMHUB.Application.Services
         {
             var scores = projects
                 .Select(CalculateProjectEffectiveness)
+                .Where(score => score > 0)
                 .ToList();
 
             return scores.Count == 0 ? 0m : Math.Round(scores.Average(), 2);
@@ -174,24 +178,23 @@ namespace PMHUB.Application.Services
         {
             var effectivenessKpi = project.KPIs.FirstOrDefault(k =>
                 string.Equals(k.Name, "Effectiveness", StringComparison.OrdinalIgnoreCase));
-            var rawValue = effectivenessKpi?.CalculatedValue ??
-                (effectivenessKpi?.CurrentValue > 0 ? effectivenessKpi.CurrentValue : project.ProgressPercentage);
-            var target = effectivenessKpi?.TargetValue > 0
-                ? effectivenessKpi.TargetValue
-                : GetDefaultKpiTarget("Effectiveness");
 
-            return CalculateTargetScore(rawValue, target);
+            var estimatedHours = effectivenessKpi?.EstimatedHours > 0
+                ? effectivenessKpi.EstimatedHours
+                : project.EstimatedHours;
+            var actualHours = effectivenessKpi?.ActualHours > 0
+                ? effectivenessKpi.ActualHours
+                : project.ActualHours;
+            var calculated = CalculateEffectivenessPercentage(estimatedHours, actualHours);
+
+            return calculated > 0
+                ? calculated
+                : NormalizePercentage(effectivenessKpi?.CurrentValue ?? 0m);
         }
 
-        private static decimal CalculateTargetScore(decimal rawValue, decimal target)
+        private static decimal CalculateEffectivenessPercentage(decimal estimatedHours, decimal actualHours)
         {
-            if (rawValue <= 0)
-                return 0m;
-
-            if (target <= 0)
-                return NormalizePercentage(rawValue);
-
-            return NormalizePercentage(rawValue * 100m / target);
+            return actualHours <= 0 ? 0m : NormalizePercentage(estimatedHours * 100m / actualHours);
         }
 
         private static decimal NormalizePercentage(decimal value)
@@ -235,9 +238,42 @@ namespace PMHUB.Application.Services
 
         public async Task<string> ExportProjectsAsync(ProjectSearchDto query)
         {
-            var projects = await _projectRepository.GetFilteredAsync(query);
+            var fiscalYear = ResolveSelectedFiscalYear(query);
+            var exportQuery = NormalizeExportQuery(query);
+            var projects = IsBookingHoursExport(exportQuery.ExportType)
+                ? await _projectRepository.GetFilteredForExportAsync(exportQuery)
+                : await _projectRepository.GetFilteredAsync(exportQuery);
             var dtos = projects.Select(ProjectMapper.ToSummaryDto);
-            return _excelExportService.GenerateProjectsExcel(dtos);
+            return _excelExportService.GenerateProjectsExcel(dtos, exportQuery.ExportType, fiscalYear);
+        }
+
+        private static bool IsBookingHoursExport(string? exportType)
+        {
+            return string.Equals(exportType, "mtd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(exportType, "ytd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(exportType, "fy", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int? ResolveSelectedFiscalYear(ProjectSearchDto query)
+        {
+            if (!string.Equals(query.ExportType, "fy", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            return query.FiscalYear ?? query.Year;
+        }
+
+        private static ProjectSearchDto NormalizeExportQuery(ProjectSearchDto query)
+        {
+            if (!string.Equals(query.ExportType, "fy", StringComparison.OrdinalIgnoreCase) ||
+                query.FiscalYear.HasValue ||
+                !query.Year.HasValue)
+            {
+                return query;
+            }
+
+            query.Year = null;
+            query.Month = null;
+            return query;
         }
 
         // ── GET BY ID ─────────────────────────────────────────
@@ -398,7 +434,8 @@ namespace PMHUB.Application.Services
                 });
             }
 
-            SyncKpis(project, dto.KPIs, includeDefaults: true);
+            var kpiTargetDefaults = await _targetSettingsService.GetActiveKpiTargetValuesAsync();
+            SyncKpis(project, dto.KPIs, includeDefaults: true, kpiTargetDefaults);
 
             try
             {
@@ -558,7 +595,10 @@ namespace PMHUB.Application.Services
                 SyncProjectResources(project, GetProjectResources(dto));
 
             if (dto.KPIs is not null)
-                SyncKpis(project, dto.KPIs, includeDefaults: true);
+            {
+                var kpiTargetDefaults = await _targetSettingsService.GetActiveKpiTargetValuesAsync();
+                SyncKpis(project, dto.KPIs, includeDefaults: true, kpiTargetDefaults);
+            }
 
             project.UpdatedAt = DateTime.UtcNow;
 
@@ -1409,7 +1449,8 @@ namespace PMHUB.Application.Services
                 });
             }
 
-            SyncKpis(project, dto.KPIs, includeDefaults: true);
+            var kpiTargetDefaults = await _targetSettingsService.GetActiveKpiTargetValuesAsync();
+            SyncKpis(project, dto.KPIs, includeDefaults: true, kpiTargetDefaults);
 
         }
 
@@ -1440,8 +1481,16 @@ namespace PMHUB.Application.Services
                 ["MonthlyWorkingHours"] = 161.5m
             };
 
-        private static void SyncKpis(Project project, IEnumerable<CreateKpiDto>? kpis, bool includeDefaults)
+        private static void SyncKpis(
+            Project project,
+            IEnumerable<CreateKpiDto>? kpis,
+            bool includeDefaults,
+            IReadOnlyDictionary<string, decimal>? configuredDefaults = null)
         {
+            var defaults = configuredDefaults is { Count: > 0 }
+                ? configuredDefaults
+                : DefaultKpiTargets;
+
             var incomingByName = (kpis ?? Enumerable.Empty<CreateKpiDto>())
                 .Where(k => !string.IsNullOrWhiteSpace(k.Name))
                 .GroupBy(k => k.Name.Trim(), StringComparer.OrdinalIgnoreCase)
@@ -1449,7 +1498,7 @@ namespace PMHUB.Application.Services
 
             if (includeDefaults)
             {
-                foreach (var defaultKpi in DefaultKpiTargets)
+                foreach (var defaultKpi in defaults)
                 {
                     incomingByName.TryAdd(defaultKpi.Key, new CreateKpiDto
                     {
@@ -1468,7 +1517,7 @@ namespace PMHUB.Application.Services
                 var name = kvp.Key;
                 var targetValue = kpiDto.TargetValue > 0
                     ? kpiDto.TargetValue
-                    : GetDefaultKpiTarget(name);
+                    : GetDefaultKpiTarget(name, defaults);
 
                 var existingKpi = project.KPIs.FirstOrDefault(k =>
                     string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -1479,11 +1528,11 @@ namespace PMHUB.Application.Services
                     {
                         Name = name,
                         TargetValue = targetValue,
-                        CurrentValue = kpiDto.CurrentValue,
-                        EstimatedDueDate = kpiDto.EstimatedDueDate,
-                        ActualEndDate = kpiDto.ActualEndDate,
-                        EstimatedHours = kpiDto.EstimatedHours,
-                        ActualHours = kpiDto.ActualHours,
+                        CurrentValue = ResolveKpiCurrentValue(project, name, kpiDto),
+                        EstimatedDueDate = ResolveKpiEstimatedDueDate(project, name, kpiDto),
+                        ActualEndDate = ResolveKpiActualEndDate(project, name, kpiDto),
+                        EstimatedHours = ResolveKpiEstimatedHours(project, name, kpiDto),
+                        ActualHours = ResolveKpiActualHours(project, name, kpiDto),
                         Description = kpiDto.Description,
                         CreatedAt = DateTime.UtcNow
                     });
@@ -1492,22 +1541,65 @@ namespace PMHUB.Application.Services
                 {
                     existingKpi.Name = name;
                     existingKpi.TargetValue = targetValue;
-                    existingKpi.CurrentValue = kpiDto.CurrentValue;
-                    existingKpi.EstimatedDueDate = kpiDto.EstimatedDueDate;
-                    existingKpi.ActualEndDate = kpiDto.ActualEndDate;
-                    existingKpi.EstimatedHours = kpiDto.EstimatedHours;
-                    existingKpi.ActualHours = kpiDto.ActualHours;
+                    existingKpi.CurrentValue = ResolveKpiCurrentValue(project, name, kpiDto);
+                    existingKpi.EstimatedDueDate = ResolveKpiEstimatedDueDate(project, name, kpiDto);
+                    existingKpi.ActualEndDate = ResolveKpiActualEndDate(project, name, kpiDto);
+                    existingKpi.EstimatedHours = ResolveKpiEstimatedHours(project, name, kpiDto);
+                    existingKpi.ActualHours = ResolveKpiActualHours(project, name, kpiDto);
                     existingKpi.Description = kpiDto.Description;
                     existingKpi.UpdatedAt = DateTime.UtcNow;
                 }
             }
         }
 
-        private static decimal GetDefaultKpiTarget(string name)
+        private static decimal ResolveKpiCurrentValue(Project project, string name, CreateKpiDto kpiDto)
         {
+            if (kpiDto.CurrentValue > 0)
+                return kpiDto.CurrentValue;
+
+            if (!string.Equals(name, "Effectiveness", StringComparison.OrdinalIgnoreCase))
+                return 0m;
+
+            return CalculateEffectivenessPercentage(
+                ResolveKpiEstimatedHours(project, name, kpiDto),
+                ResolveKpiActualHours(project, name, kpiDto));
+        }
+
+        private static DateTime? ResolveKpiEstimatedDueDate(Project project, string name, CreateKpiDto kpiDto)
+        {
+            return string.Equals(name, "OTD", StringComparison.OrdinalIgnoreCase)
+                ? kpiDto.EstimatedDueDate ?? project.EstimatedDueDate
+                : kpiDto.EstimatedDueDate;
+        }
+
+        private static DateTime? ResolveKpiActualEndDate(Project project, string name, CreateKpiDto kpiDto)
+        {
+            return string.Equals(name, "OTD", StringComparison.OrdinalIgnoreCase)
+                ? kpiDto.ActualEndDate ?? project.EndDate
+                : kpiDto.ActualEndDate;
+        }
+
+        private static decimal ResolveKpiEstimatedHours(Project project, string name, CreateKpiDto kpiDto)
+        {
+            return string.Equals(name, "Effectiveness", StringComparison.OrdinalIgnoreCase) && kpiDto.EstimatedHours <= 0
+                ? project.EstimatedHours
+                : kpiDto.EstimatedHours;
+        }
+
+        private static decimal ResolveKpiActualHours(Project project, string name, CreateKpiDto kpiDto)
+        {
+            return string.Equals(name, "Effectiveness", StringComparison.OrdinalIgnoreCase) && kpiDto.ActualHours <= 0
+                ? project.ActualHours
+                : kpiDto.ActualHours;
+        }
+
+        private static decimal GetDefaultKpiTarget(string name, IReadOnlyDictionary<string, decimal>? defaults = null)
+        {
+            defaults ??= DefaultKpiTargets;
+
             return string.Equals(name, "CSAT", StringComparison.OrdinalIgnoreCase)
-                ? DefaultKpiTargets.GetValueOrDefault("CSA", 0m)
-                : DefaultKpiTargets.GetValueOrDefault(name, 0m);
+                ? defaults.GetValueOrDefault("CSA", 0m)
+                : defaults.GetValueOrDefault(name, 0m);
         }
 
         private async Task SyncBusinessUnitsAsync(Project project, IEnumerable<Guid> businessUnitIds)

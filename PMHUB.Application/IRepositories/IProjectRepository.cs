@@ -21,6 +21,7 @@ namespace PMHUB.Infrastructure.Repositories
         Expression<Func<Project, bool>> predicate);
         Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(ProjectSearchDto query);
         Task<IEnumerable<Project>> GetFilteredAsync(ProjectSearchDto query);
+        Task<IEnumerable<Project>> GetFilteredForExportAsync(ProjectSearchDto query);
     }
 
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PMHUB.Application.DTOs;
+using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
 using PMHUB.Domain.Enums;
 using PMHUB.Infrastructure.Persistence;
@@ -11,20 +12,23 @@ namespace PMHUB.Infrastructure.Repositories
 {
     public class DashboardRepository : IDashboardRepository
     {
-        private const decimal DefaultKpiTargetPercentage = 85m;
         private const string PlaceholderDepartmentName = "-";
 
         private readonly PMHubDbContext _context;
-        private readonly CompanyStandards _standards;
+        private readonly ITargetSettingsService _targetSettingsService;
+        private CompanyStandards _standards;
 
-        public DashboardRepository(PMHubDbContext context, IOptions<CompanyStandards> standards)
+        public DashboardRepository(PMHubDbContext context, IOptions<CompanyStandards> standards, ITargetSettingsService targetSettingsService)
         {
             _context = context;
             _standards = standards.Value;
+            _targetSettingsService = targetSettingsService;
         }
 
         public async Task<DashboardOverviewDto> GetDashboardOverviewAsync(DashboardQueryDto query, bool isAdminScope, Guid? userId = null)
         {
+            await LoadTargetSettingsAsync();
+
             var topN = query.TopN <= 0 ? 5 : Math.Min(query.TopN, 20);
             var now = DateTime.UtcNow.Date;
 
@@ -67,14 +71,19 @@ namespace PMHUB.Infrastructure.Repositories
             var effectivenessRows = await projectsQuery
                 .Select(p => new DashboardEffectivenessMetricRow
                 {
-                    ProgressPercentage = p.ProgressPercentage,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours,
                     CurrentValue = p.KPIs
                         .Where(k => k.Name == "Effectiveness")
                         .Select(k => (decimal?)k.CurrentValue)
                         .FirstOrDefault(),
-                    TargetValue = p.KPIs
+                    KpiEstimatedHours = p.KPIs
                         .Where(k => k.Name == "Effectiveness")
-                        .Select(k => (decimal?)k.TargetValue)
+                        .Select(k => (decimal?)k.EstimatedHours)
+                        .FirstOrDefault(),
+                    KpiActualHours = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.ActualHours)
                         .FirstOrDefault()
                 })
                 .ToListAsync();
@@ -252,6 +261,8 @@ namespace PMHUB.Infrastructure.Repositories
 
         public async Task<DashboardPersonalPerformanceDto> GetPersonalPerformanceDashboardAsync(Guid userId, DashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var topN = query.TopN <= 0 ? 5 : Math.Min(query.TopN, 20);
             var now = DateTime.UtcNow.Date;
             var workloadYear = query.Year.HasValue && query.Year.Value > 0
@@ -462,6 +473,8 @@ namespace PMHUB.Infrastructure.Repositories
 
         public async Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(DashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var metrics = await GetAdminDashboardLightweightMetricsAsync(query);
 
             return new DashboardExtendedAdminDto
@@ -482,6 +495,8 @@ namespace PMHUB.Infrastructure.Repositories
 
         public async Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(DashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var metrics = await GetAdminDashboardLightweightMetricsAsync(query);
 
             return new DashboardAdminBiDto
@@ -532,14 +547,19 @@ namespace PMHUB.Infrastructure.Repositories
             var effectivenessRows = await projectsQuery
                 .Select(p => new DashboardEffectivenessMetricRow
                 {
-                    ProgressPercentage = p.ProgressPercentage,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours,
                     CurrentValue = p.KPIs
                         .Where(k => k.Name == "Effectiveness")
                         .Select(k => (decimal?)k.CurrentValue)
                         .FirstOrDefault(),
-                    TargetValue = p.KPIs
+                    KpiEstimatedHours = p.KPIs
                         .Where(k => k.Name == "Effectiveness")
-                        .Select(k => (decimal?)k.TargetValue)
+                        .Select(k => (decimal?)k.EstimatedHours)
+                        .FirstOrDefault(),
+                    KpiActualHours = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.ActualHours)
                         .FirstOrDefault()
                 })
                 .ToListAsync();
@@ -646,6 +666,8 @@ namespace PMHUB.Infrastructure.Repositories
 
         public async Task<DashboardGroupedDistributionDto> GetGroupedDistributionAsync(DashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var now = DateTime.UtcNow.Date;
             var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
 
@@ -761,6 +783,8 @@ namespace PMHUB.Infrastructure.Repositories
 
         public async Task<DashboardGroupedDistributionCountsDto> GetGroupedDistributionCountsAsync(DashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var now = DateTime.UtcNow.Date;
             var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
             var projectIdsQuery = projectsQuery.Select(p => p.Id);
@@ -791,14 +815,19 @@ namespace PMHUB.Infrastructure.Repositories
             var effectivenessRows = await projectsQuery
                 .Select(p => new DashboardEffectivenessMetricRow
                 {
-                    ProgressPercentage = p.ProgressPercentage,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours,
                     CurrentValue = p.KPIs
                         .Where(k => k.Name == "Effectiveness")
                         .Select(k => (decimal?)k.CurrentValue)
                         .FirstOrDefault(),
-                    TargetValue = p.KPIs
+                    KpiEstimatedHours = p.KPIs
                         .Where(k => k.Name == "Effectiveness")
-                        .Select(k => (decimal?)k.TargetValue)
+                        .Select(k => (decimal?)k.EstimatedHours)
+                        .FirstOrDefault(),
+                    KpiActualHours = p.KPIs
+                        .Where(k => k.Name == "Effectiveness")
+                        .Select(k => (decimal?)k.ActualHours)
                         .FirstOrDefault()
                 })
                 .ToListAsync();
@@ -1053,29 +1082,27 @@ namespace PMHUB.Infrastructure.Repositories
             var scores = rows
                 .Select(row =>
                 {
-                    var rawValue = row.CurrentValue.GetValueOrDefault() > 0
-                        ? row.CurrentValue!.Value
-                        : row.ProgressPercentage;
-                    var target = row.TargetValue.GetValueOrDefault() > 0
-                        ? row.TargetValue!.Value
-                        : DefaultKpiTargetPercentage;
+                    var estimatedHours = row.KpiEstimatedHours.GetValueOrDefault() > 0
+                        ? row.KpiEstimatedHours!.Value
+                        : row.EstimatedHours;
+                    var actualHours = row.KpiActualHours.GetValueOrDefault() > 0
+                        ? row.KpiActualHours!.Value
+                        : row.ActualHours;
 
-                    return CalculateTargetScore(rawValue, target);
+                    var calculated = CalculateEffectivenessPercentage(estimatedHours, actualHours);
+                    return calculated > 0
+                        ? calculated
+                        : NormalizePercentage(row.CurrentValue.GetValueOrDefault());
                 })
+                .Where(score => score > 0)
                 .ToList();
 
             return scores.Count == 0 ? 0m : Math.Round(scores.Average(), 2);
         }
 
-        private static decimal CalculateTargetScore(decimal rawValue, decimal target)
+        private static decimal CalculateEffectivenessPercentage(decimal estimatedHours, decimal actualHours)
         {
-            if (rawValue <= 0)
-                return 0m;
-
-            if (target <= 0)
-                return NormalizePercentage(rawValue);
-
-            return NormalizePercentage(rawValue * 100m / target);
+            return actualHours <= 0 ? 0m : NormalizePercentage(estimatedHours * 100m / actualHours);
         }
 
         private static decimal NormalizePercentage(decimal value)
@@ -1091,9 +1118,11 @@ namespace PMHUB.Infrastructure.Repositories
 
         private sealed class DashboardEffectivenessMetricRow
         {
-            public int ProgressPercentage { get; set; }
+            public decimal EstimatedHours { get; set; }
+            public decimal ActualHours { get; set; }
             public decimal? CurrentValue { get; set; }
-            public decimal? TargetValue { get; set; }
+            public decimal? KpiEstimatedHours { get; set; }
+            public decimal? KpiActualHours { get; set; }
         }
 
         private sealed class DashboardAdminLightweightMetrics
@@ -1472,6 +1501,11 @@ namespace PMHUB.Infrastructure.Repositories
         {
             target = value;
             return true;
+        }
+
+        private async Task LoadTargetSettingsAsync()
+        {
+            _standards = await _targetSettingsService.GetCompanyStandardsAsync();
         }
     }
 }

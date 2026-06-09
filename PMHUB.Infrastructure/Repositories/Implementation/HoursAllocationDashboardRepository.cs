@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.IRepositories;
+using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
 using PMHUB.Domain.Enums;
 using PMHUB.Infrastructure.Persistence;
@@ -14,16 +15,20 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
     public class HoursAllocationDashboardRepository : IHoursAllocationDashboardRepository
     {
         private readonly PMHubDbContext _context;
-        private readonly CompanyStandards _standards;
+        private readonly ITargetSettingsService _targetSettingsService;
+        private CompanyStandards _standards;
 
-        public HoursAllocationDashboardRepository(PMHubDbContext context, IOptions<CompanyStandards> standards)
+        public HoursAllocationDashboardRepository(PMHubDbContext context, IOptions<CompanyStandards> standards, ITargetSettingsService targetSettingsService)
         {
             _context = context;
             _standards = standards.Value;
+            _targetSettingsService = targetSettingsService;
         }
 
         public async Task<HoursAllocationFiltersDto> GetFiltersAsync()
         {
+            await LoadTargetSettingsAsync();
+
             var fiscalYearStartMonth = GetFiscalYearStartMonth();
             var currentFiscalYear = CompanyYearHelper.GetCurrentCompanyYear(DateTime.UtcNow);
             var projectDates = await _context.Projects.AsNoTracking().Select(p => p.StartDate).ToListAsync();
@@ -93,17 +98,21 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         public async Task<HoursAllocationDashboardDto> GetDashboardAsync(HoursAllocationDashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var period = ResolveSelectedPeriod(query);
             var ytdPeriod = ResolveYtdPeriod(period.End);
             var selectedRows = await BuildHoursQuery(query, period.Start, period.End).ToListAsync();
             var ytdRows = await BuildHoursQuery(query, ytdPeriod.Start, ytdPeriod.End).ToListAsync();
+            var capacityUsers = await BuildCapacityUsersQuery(query).ToListAsync();
+            var projectCount = await BuildSummaryProjectsQuery(query, period.Start, period.End).CountAsync();
             var availableHoursPerUser = CalculateAvailableHours(period.Start, period.End);
-            var totalAvailableHours = selectedRows.Select(r => r.UserId).Distinct().Count() * availableHoursPerUser;
+            var totalAvailableHours = capacityUsers.Count * availableHoursPerUser;
             var totalHours = selectedRows.Sum(r => r.TotalHours);
             var ytdHours = ytdRows.Sum(r => r.TotalHours);
             var details = BuildDetails(selectedRows);
-            var monthlyBreakdown = BuildMonthlyBreakdown(selectedRows, period.Start, period.End);
-            var hoursByUser = BuildHoursByUser(selectedRows, period.Start, period.End, availableHoursPerUser);
+            var monthlyBreakdown = BuildMonthlyBreakdown(selectedRows, capacityUsers.Count, period.Start, period.End);
+            var hoursByUser = BuildHoursByUser(selectedRows, capacityUsers, period.Start, period.End, availableHoursPerUser);
             var hoursByProject = BuildHoursByProject(selectedRows);
             var hoursByProjectUser = BuildHoursByProjectUser(selectedRows);
             var hoursByRole = BuildHoursByRole(selectedRows, totalHours);
@@ -115,8 +124,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 Summary = new HoursAllocationSummaryDto
                 {
                     TotalHours = Round(totalHours),
-                    ActiveUsers = selectedRows.Select(r => r.UserId).Distinct().Count(),
-                    Projects = selectedRows.Where(r => r.ProjectId.HasValue).Select(r => r.ProjectId).Distinct().Count(),
+                    Projects = projectCount,
                     Allocations = selectedRows.Count,
                     AverageUtilization = CalculatePercentage(totalHours, totalAvailableHours),
                     YearToDateHours = Round(ytdHours),
@@ -136,6 +144,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         public async Task<List<HoursAllocationReminderRecipientDto>> GetReminderRecipientsAsync(HoursAllocationDashboardQueryDto query)
         {
+            await LoadTargetSettingsAsync();
+
             var period = ResolveSelectedPeriod(query);
             var hours = await BuildHoursQuery(query, period.Start, period.End).ToListAsync();
             var totalsByUser = hours
@@ -187,6 +197,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 hoursQuery = hoursQuery.Where(h =>
                     h.User.RoleId == roleId ||
                     h.ProjectId.HasValue &&
+                    h.Project != null &&
                     h.Project.ProjectMembers.Any(pm => pm.UserId == h.UserId && pm.RoleId == roleId));
             }
 
@@ -231,8 +242,118 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     ResearchAndDevHours = h.RAndDHours,
                     WorkshopHours = h.WorkshopHours,
                     OtherHours = h.OtherHours,
-                    TotalHours = h.TotalHours,
+                    TotalHours = h.ExecutionHours + h.SupervisionHours + h.ProcessHours +
+                        h.ManagementHours + h.RAndDHours + h.WorkshopHours + h.OtherHours +
+                        h.InternManagementHours,
                     IsProjectManager = h.Project != null && h.Project.ProjectManagerId == h.UserId
+                });
+        }
+
+        private IQueryable<Project> BuildSummaryProjectsQuery(
+            HoursAllocationDashboardQueryDto query,
+            DateTime startDate,
+            DateTime endDate)
+        {
+            var projectsQuery = _context.Projects
+                .AsNoTracking()
+                .Where(p => p.StartDate <= endDate &&
+                    (!p.EndDate.HasValue || p.EndDate.Value >= startDate));
+
+            if (query.ProjectId.HasValue && query.ProjectId.Value != Guid.Empty)
+                projectsQuery = projectsQuery.Where(p => p.Id == query.ProjectId.Value);
+
+            if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
+            {
+                var userId = query.UserId.Value;
+                projectsQuery = projectsQuery.Where(p =>
+                    p.ProjectManagerId == userId ||
+                    p.ProjectMembers.Any(pm => pm.UserId == userId));
+            }
+
+            if (query.MemberId.HasValue && query.MemberId.Value != Guid.Empty)
+            {
+                var memberId = query.MemberId.Value;
+                projectsQuery = projectsQuery.Where(p => p.ProjectMembers.Any(pm => pm.UserId == memberId));
+            }
+
+            if (query.RoleId.HasValue && query.RoleId.Value != Guid.Empty)
+            {
+                var roleId = query.RoleId.Value;
+                projectsQuery = projectsQuery.Where(p =>
+                    p.ProjectMembers.Any(pm => pm.RoleId == roleId) ||
+                    p.ProjectManager != null && p.ProjectManager.RoleId == roleId);
+            }
+
+            var search = query.Search?.Trim();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                projectsQuery = projectsQuery.Where(p =>
+                    p.Name.Contains(search) ||
+                    p.ProjectManager != null &&
+                    ((p.ProjectManager.FirstName + " " + p.ProjectManager.LastName).Contains(search) ||
+                     p.ProjectManager.Email.Contains(search) ||
+                     p.ProjectManager.Role != null && p.ProjectManager.Role.Name.Contains(search)) ||
+                    p.ProjectMembers.Any(pm =>
+                        (pm.User.FirstName + " " + pm.User.LastName).Contains(search) ||
+                        pm.User.Email.Contains(search) ||
+                        pm.Role.Name.Contains(search)));
+            }
+
+            return projectsQuery;
+        }
+
+        private IQueryable<CapacityUserRow> BuildCapacityUsersQuery(HoursAllocationDashboardQueryDto query)
+        {
+            var usersQuery = _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive && u.IsApproved &&
+                    u.RoleId.HasValue &&
+                    u.Role != null &&
+                    u.Role.Name.ToLower() != "intern" &&
+                    u.Role.Name.ToLower() != "stagiaire");
+
+            if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
+                usersQuery = usersQuery.Where(u => u.Id == query.UserId.Value);
+
+            if (query.MemberId.HasValue && query.MemberId.Value != Guid.Empty)
+                usersQuery = usersQuery.Where(u => u.Id == query.MemberId.Value);
+
+            if (query.RoleId.HasValue && query.RoleId.Value != Guid.Empty)
+                usersQuery = usersQuery.Where(u => u.RoleId == query.RoleId.Value);
+
+            if (query.ProjectId.HasValue && query.ProjectId.Value != Guid.Empty)
+            {
+                var projectId = query.ProjectId.Value;
+                usersQuery = usersQuery.Where(u =>
+                    u.ProjectMembers.Any(pm =>
+                        pm.ProjectId == projectId &&
+                        (!pm.Project.ProjectManagerId.HasValue || pm.UserId != pm.Project.ProjectManagerId.Value)) ||
+                    _context.Projects.Any(p => p.Id == projectId && p.ProjectManagerId == u.Id));
+            }
+
+            var search = query.Search?.Trim();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                usersQuery = usersQuery.Where(u =>
+                    (u.FirstName + " " + u.LastName).Contains(search) ||
+                    u.Email.Contains(search) ||
+                    u.FirstName.Contains(search) ||
+                    u.LastName.Contains(search) ||
+                    u.Role != null && u.Role.Name.Contains(search) ||
+                    u.ProjectMembers.Any(pm => pm.Project.Name.Contains(search)) ||
+                    _context.Projects.Any(p => p.ProjectManagerId == u.Id && p.Name.Contains(search)));
+            }
+
+            return usersQuery
+                .OrderBy(u => u.FirstName)
+                .ThenBy(u => u.LastName)
+                .Select(u => new CapacityUserRow
+                {
+                    UserId = u.Id,
+                    UserName = (u.FirstName + " " + u.LastName).Trim(),
+                    RoleId = u.RoleId!.Value,
+                    Role = u.Role != null ? u.Role.Name : string.Empty
                 });
         }
 
@@ -296,6 +417,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         private List<HoursAllocationMonthlyBreakdownDto> BuildMonthlyBreakdown(
             List<HoursAllocationRow> rows,
+            int capacityUserCount,
             DateTime startDate,
             DateTime endDate)
         {
@@ -303,12 +425,13 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 .Select(monthStart =>
                 {
                     var monthEnd = monthStart.AddMonths(1).AddTicks(-1);
+                    var effectiveStart = monthStart < startDate ? startDate : monthStart;
+                    var effectiveEnd = monthEnd > endDate ? endDate : monthEnd;
                     var monthRows = rows
                         .Where(r => r.Date >= monthStart && r.Date <= monthEnd)
                         .ToList();
                     var totalHours = monthRows.Sum(r => r.TotalHours);
-                    var activeUsers = monthRows.Select(r => r.UserId).Distinct().Count();
-                    var availableHours = activeUsers * CalculateAvailableHours(monthStart, monthEnd);
+                    var availableHours = capacityUserCount * CalculateAvailableHours(effectiveStart, effectiveEnd);
 
                     return new HoursAllocationMonthlyBreakdownDto
                     {
@@ -324,39 +447,44 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         private List<HoursAllocationByUserDto> BuildHoursByUser(
             List<HoursAllocationRow> rows,
+            List<CapacityUserRow> users,
             DateTime startDate,
             DateTime endDate,
             decimal availableHoursPerUser)
         {
             var durationLabel = BuildDurationLabel(startDate, endDate);
+            var rowsByUser = rows
+                .GroupBy(r => r.UserId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
-            return rows
-                .GroupBy(r => new { r.UserId, r.UserName, r.Role })
-                .Select(g =>
+            return users
+                .Select(user =>
                 {
-                    var allocatedHours = g.Sum(x => x.TotalHours);
+                    var userRows = rowsByUser.GetValueOrDefault(user.UserId) ?? new List<HoursAllocationRow>();
+                    var allocatedHours = userRows.Sum(x => x.TotalHours);
                     return new HoursAllocationByUserDto
                     {
-                        UserId = g.Key.UserId,
-                        UserName = g.Key.UserName,
-                        Role = g.Key.Role,
-                        Department = g.GroupBy(x => x.Department).OrderByDescending(x => x.Count()).FirstOrDefault()?.Key ?? string.Empty,
+                        UserId = user.UserId,
+                        UserName = user.UserName,
+                        Role = user.Role,
+                        Department = userRows.GroupBy(x => x.Department).OrderByDescending(x => x.Count()).FirstOrDefault()?.Key ?? string.Empty,
                         AllocatedHours = Round(allocatedHours),
                         DurationLabel = durationLabel,
                         RemainingHours = Round(Math.Max(availableHoursPerUser - allocatedHours, 0m)),
                         AvailableHours = Round(availableHoursPerUser),
                         UtilizationPercentage = CalculatePercentage(allocatedHours, availableHoursPerUser),
-                        ExecutionHours = Round(g.Sum(x => x.ExecutionHours)),
-                        TechLeadHours = Round(g.Sum(x => x.TechLeadHours)),
-                        ProcessHours = Round(g.Sum(x => x.ProcessHours)),
-                        ProjectManagementHours = Round(g.Sum(x => x.ProjectManagementHours)),
-                        ResearchAndDevHours = Round(g.Sum(x => x.ResearchAndDevHours)),
-                        WorkshopHours = Round(g.Sum(x => x.WorkshopHours)),
-                        ProjectCount = g.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId).Distinct().Count(),
-                        AllocationCount = g.Count()
+                        ExecutionHours = Round(userRows.Sum(x => x.ExecutionHours)),
+                        TechLeadHours = Round(userRows.Sum(x => x.TechLeadHours)),
+                        ProcessHours = Round(userRows.Sum(x => x.ProcessHours)),
+                        ProjectManagementHours = Round(userRows.Sum(x => x.ProjectManagementHours)),
+                        ResearchAndDevHours = Round(userRows.Sum(x => x.ResearchAndDevHours)),
+                        WorkshopHours = Round(userRows.Sum(x => x.WorkshopHours)),
+                        ProjectCount = userRows.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId).Distinct().Count(),
+                        AllocationCount = userRows.Count
                     };
                 })
                 .OrderByDescending(x => x.AllocatedHours)
+                .ThenBy(x => x.UserName)
                 .ToList();
         }
 
@@ -643,6 +771,11 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 : year;
         }
 
+        private async Task LoadTargetSettingsAsync()
+        {
+            _standards = await _targetSettingsService.GetCompanyStandardsAsync();
+        }
+
         private class HoursAllocationRow
         {
             public DateTime Date { get; set; }
@@ -663,6 +796,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             public decimal OtherHours { get; set; }
             public decimal TotalHours { get; set; }
             public bool IsProjectManager { get; set; }
+        }
+
+        private class CapacityUserRow
+        {
+            public Guid UserId { get; set; }
+            public string UserName { get; set; } = string.Empty;
+            public Guid RoleId { get; set; }
+            public string Role { get; set; } = string.Empty;
         }
     }
 }
