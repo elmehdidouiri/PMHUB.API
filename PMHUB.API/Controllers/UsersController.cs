@@ -30,7 +30,7 @@ namespace PMHUB.API.Controllers
 
         // GET api/users/team-member-candidates
         [HttpGet("team-member-candidates")]
-        [Authorize(Policy = "AdminOnly")]
+        [Authorize]
         public async Task<ActionResult<ApiResponse<IEnumerable<UserDto>>>> GetTeamMemberCandidates()
         {
             var users = await _userService.GetTeamMemberCandidatesAsync();

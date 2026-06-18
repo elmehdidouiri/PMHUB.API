@@ -28,6 +28,7 @@ namespace PMHUB.Application.Services.Implementation
             int recentUpdatedDays = 7,
             int lowProgressThreshold = 70,
             int maxItems = 50,
+            bool includeAdminNotifications = true,
             CancellationToken cancellationToken = default)
         {
             var today = DateTime.UtcNow.Date;
@@ -52,8 +53,11 @@ namespace PMHUB.Application.Services.Implementation
             AddRecentProjectUpdateNotifications(notifications, projects, recentlyUpdatedSince);
             AddRoadblockNotifications(notifications, projects, today, dueLimit);
 
-            cancellationToken.ThrowIfCancellationRequested();
-            await AddBookingNotificationsAsync(notifications, cancellationToken);
+            if (includeAdminNotifications)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await AddBookingNotificationsAsync(notifications, cancellationToken);
+            }
 
             var orderedItems = notifications
                 .OrderBy(n => SeverityRank(n.Severity))

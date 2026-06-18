@@ -247,6 +247,29 @@ namespace PMHUB.Application.Services
             return _excelExportService.GenerateProjectsExcel(dtos, exportQuery.ExportType, fiscalYear);
         }
 
+        public async Task<string> ExportProjectBookingHoursAsync(ProjectSearchDto query)
+        {
+            var period = ResolveBookingExportPeriod(query);
+            var dtos = await GetProjectBookingHoursRowsAsync(query, period);
+
+            return _excelExportService.GenerateProjectBookingHoursExcel(dtos, period.Label);
+        }
+
+        public async Task<IEnumerable<ProjectBookingExportDto>> GetProjectBookingHoursPreviewAsync(ProjectSearchDto query)
+        {
+            var period = ResolveBookingExportPeriod(query);
+            return await GetProjectBookingHoursRowsAsync(query, period);
+        }
+
+        private async Task<IEnumerable<ProjectBookingExportDto>> GetProjectBookingHoursRowsAsync(
+            ProjectSearchDto query,
+            (DateTime Start, DateTime EndExclusive, string Label) period)
+        {
+            var exportQuery = NormalizeBookingExportQuery(query, period);
+            var projects = await _projectRepository.GetFilteredForExportAsync(exportQuery);
+            return projects.Select(project => ToProjectBookingExportDto(project, period.Start, period.EndExclusive));
+        }
+
         private static bool IsBookingHoursExport(string? exportType)
         {
             return string.Equals(exportType, "mtd", StringComparison.OrdinalIgnoreCase) ||
@@ -277,6 +300,142 @@ namespace PMHUB.Application.Services
         }
 
         // ── GET BY ID ─────────────────────────────────────────
+        private static ProjectSearchDto NormalizeBookingExportQuery(
+            ProjectSearchDto query,
+            (DateTime Start, DateTime EndExclusive, string Label) period)
+        {
+            return new ProjectSearchDto
+            {
+                PageNumber = query.PageNumber,
+                PageSize = query.PageSize,
+                Search = query.Search,
+                SortBy = query.SortBy,
+                SortDescending = query.SortDescending,
+                Status = query.Status,
+                Phase = query.Phase,
+                ProjectType = query.ProjectType,
+                ProjectStatus = query.ProjectStatus,
+                ProjectPhase = query.ProjectPhase,
+                ProcessStatus = query.ProcessStatus,
+                ProjectManagementType = query.ProjectManagementType,
+                DepartmentId = query.DepartmentId,
+                BusinessUnitId = query.BusinessUnitId,
+                PlantId = query.PlantId,
+                ProjectId = query.ProjectId,
+                RoleId = query.RoleId,
+                ProjectManagerId = query.ProjectManagerId,
+                UserId = query.UserId,
+                InternId = query.InternId,
+                FiscalYear = query.FiscalYear,
+                ExportType = query.ExportType,
+                Ytd = query.Ytd,
+                All = true,
+                DelayedOnly = query.DelayedOnly,
+                IncompleteOnly = query.IncompleteOnly
+            };
+        }
+
+        private static (DateTime Start, DateTime EndExclusive, string Label) ResolveBookingExportPeriod(ProjectSearchDto query)
+        {
+            if (query.StartDate.HasValue || query.EndDate.HasValue)
+            {
+                var start = query.StartDate?.Date ?? DateTime.MinValue.Date;
+                var endInclusive = query.EndDate?.Date ?? DateTime.MaxValue.Date.AddDays(-1);
+
+                if (endInclusive < start)
+                    throw new BadRequestException("End date must be greater than or equal to start date.");
+
+                return (start, endInclusive.AddDays(1), BuildPeriodLabel(start, endInclusive));
+            }
+
+            if (query.Year.HasValue && query.Month is >= 1 and <= 12)
+            {
+                var start = new DateTime(query.Year.Value, query.Month.Value, 1);
+                return (start, start.AddMonths(1), start.ToString("MMMM", System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            if (query.Year.HasValue)
+            {
+                var start = new DateTime(query.Year.Value, 1, 1);
+                return (start, start.AddYears(1), query.Year.Value.ToString());
+            }
+
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            return (currentMonthStart, currentMonthStart.AddMonths(1), currentMonthStart.ToString("MMMM", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private static string BuildPeriodLabel(DateTime start, DateTime endInclusive)
+        {
+            if (start.Day == 1 && endInclusive == start.AddMonths(1).AddDays(-1))
+                return start.ToString("MMMM", System.Globalization.CultureInfo.InvariantCulture);
+
+            if (start.Day == 1 && start.Month == 1 && endInclusive == start.AddYears(1).AddDays(-1))
+                return start.Year.ToString();
+
+            return $"{start:yyyy-MM-dd}_to_{endInclusive:yyyy-MM-dd}";
+        }
+
+        private static ProjectBookingExportDto ToProjectBookingExportDto(
+            Project project,
+            DateTime start,
+            DateTime endExclusive)
+        {
+            return new ProjectBookingExportDto
+            {
+                Project = project.Name,
+                Phase = project.Phase.ToString(),
+                EstimatedHours = project.EstimatedHours,
+                Department = string.Join(", ", GetProjectDepartments(project)
+                    .Select(d => d.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct()),
+                Sponsor = project.Sponsor ?? string.Empty,
+                CostCenter = project.CostCenter ?? string.Empty,
+                TotalBookingHours = CalculateTotalBookingHours(project, start, endExclusive)
+            };
+        }
+
+        private static IEnumerable<Department> GetProjectDepartments(Project project)
+        {
+            var departments = project.ProjectDepartments
+                .Select(pd => pd.Department)
+                .Where(department => department is not null)
+                .Cast<Department>()
+                .ToList();
+
+            if (departments.Count == 0 && project.Department is not null)
+                departments.Add(project.Department);
+
+            return departments;
+        }
+
+        private static decimal CalculateTotalBookingHours(Project project, DateTime start, DateTime endExclusive)
+        {
+            var userHours = project.HourEntries
+                .Where(entry => entry.Date.Date >= start && entry.Date.Date < endExclusive)
+                .Sum(CalculateHourEntryHours);
+
+            var internHours = project.InternAllocations
+                .SelectMany(allocation => allocation.InternHourEntries)
+                .Where(entry => entry.Date.Date >= start && entry.Date.Date < endExclusive)
+                .Sum(entry => entry.Hours);
+
+            return userHours + internHours;
+        }
+
+        private static decimal CalculateHourEntryHours(HourEntry entry)
+        {
+            return entry.ExecutionHours +
+                entry.SupervisionHours +
+                entry.ProcessHours +
+                entry.ManagementHours +
+                entry.RAndDHours +
+                entry.WorkshopHours +
+                entry.OtherHours +
+                entry.InternManagementHours;
+        }
+
         public async Task<ProjectDto?> GetByIdAsync(Guid id)
         {
             var project = await _projectRepository.GetByIdWithIncludesAsync(id)
@@ -738,15 +897,15 @@ namespace PMHUB.Application.Services
             if (project.ProjectMembers.Any(m => m.UserId == userId))
                 throw new ConflictException("Member", userId);
 
-            project.ProjectMembers.Add(new ProjectMember
+            await _projectMemberRepository.AddAsync(new ProjectMember
             {
+                ProjectId = projectId,
                 UserId = userId,
                 RoleId = roleId,
                 JoinedAt = DateTime.UtcNow
             });
 
-            _projectRepository.Update(project);
-            await _projectRepository.SaveChangesAsync();
+            await _projectMemberRepository.SaveChangesAsync();
         }
 
         public async Task<IEnumerable<ProjectMemberDto>> GetMembersAsync(Guid projectId)
@@ -771,13 +930,14 @@ namespace PMHUB.Application.Services
                 .ToList();
         }
 
-        public async Task RemoveMemberAsync(Guid projectId, Guid userId)
+        public async Task RemoveMemberAsync(Guid projectId, Guid memberIdOrUserId)
         {
             var project = await _projectRepository.GetByIdWithIncludesAsync(projectId)
                 ?? throw new NotFoundException("Project", projectId);
 
-            var member = project.ProjectMembers.FirstOrDefault(m => m.UserId == userId)
-                ?? throw new NotFoundException("Member", userId);
+            var member = project.ProjectMembers.FirstOrDefault(m =>
+                    m.UserId == memberIdOrUserId || m.Id == memberIdOrUserId)
+                ?? throw new NotFoundException("Member", memberIdOrUserId);
 
             var tasksAssignedToMember = await _deliverableTaskRepository.FindAsync(
                 t => t.ProjectMemberId == member.Id);
@@ -792,9 +952,11 @@ namespace PMHUB.Application.Services
             if (tasksAssignedToMember.Any())
                 await _deliverableTaskRepository.SaveChangesAsync();
 
-            project.ProjectMembers.Remove(member);
-            _projectRepository.Update(project);
-            await _projectRepository.SaveChangesAsync();
+            var memberToDelete = await _projectMemberRepository.GetByIdAsync(member.Id)
+                ?? throw new NotFoundException("Member", member.Id);
+
+            _projectMemberRepository.Remove(memberToDelete);
+            await _projectMemberRepository.SaveChangesAsync();
         }
         public async Task<IEnumerable<ProjectExportDto>> GetForExportAsync(DateTime startDate, DateTime endDate)
         {

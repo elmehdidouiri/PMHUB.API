@@ -28,6 +28,7 @@ namespace PMHUB.API.Controllers
 
         // POST api/projects
         [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectDto>>> Create(
             [FromBody] CreateFullProjectDto dto)
         {
@@ -68,6 +69,9 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<PaginatedResultDto<ProjectSummaryDto>>>> GetPaged(
             [FromQuery] ProjectSearchDto query)
         {
+            if (!query.All && !IsCurrentUserAdmin())
+                query.UserId = GetAuthenticatedUserId();
+
             var result = await _service.GetPagedAsync(query);
             return Ok(ApiResponse<PaginatedResultDto<ProjectSummaryDto>>.Ok(result));
         }
@@ -87,6 +91,30 @@ namespace PMHUB.API.Controllers
             return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Path.GetFileName(fullPath));
         }
 
+        [HttpGet("export/booking-hours")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<IActionResult> ExportProjectBookingHours(
+            [FromQuery] ProjectSearchDto query)
+        {
+            var relativePath = await _service.ExportProjectBookingHoursAsync(query);
+            var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath.TrimStart('/'));
+
+            if (!System.IO.File.Exists(fullPath))
+                return NotFound(ApiResponse.Fail("Le fichier d'export n'a pas pu Ãªtre gÃ©nÃ©rÃ©."));
+
+            var fileBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
+            return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Path.GetFileName(fullPath));
+        }
+
+        [HttpGet("export/booking-hours/preview")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<ProjectBookingExportDto>>>> PreviewProjectBookingHours(
+            [FromQuery] ProjectSearchDto query)
+        {
+            var result = await _service.GetProjectBookingHoursPreviewAsync(query);
+            return Ok(ApiResponse<IEnumerable<ProjectBookingExportDto>>.Ok(result));
+        }
+
         // GET api/projects/{id}
         [HttpGet("{id:guid}")]
         public async Task<ActionResult<ApiResponse<ProjectDto>>> GetById(Guid id)
@@ -99,6 +127,7 @@ namespace PMHUB.API.Controllers
 
         // PUT api/projects/{id}
         [HttpPut("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectDto>>> Update(
             Guid id, [FromBody] UpdateProjectDto dto)
         {
@@ -108,6 +137,7 @@ namespace PMHUB.API.Controllers
 
         // PATCH api/projects/{id}
         [HttpPatch("{id:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectDto>>> Patch(
             Guid id, [FromBody] PatchProjectDto dto)
         {
@@ -171,6 +201,7 @@ namespace PMHUB.API.Controllers
 
         // POST api/projects/{id}/subprojects
         [HttpPost("{id:guid}/subprojects")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectDto>>> AddSubProject(
             Guid id, [FromBody] CreateSubProjectDto dto)
         {
@@ -182,6 +213,7 @@ namespace PMHUB.API.Controllers
 
         // POST api/projects/{id}/members
         [HttpPost("{id:guid}/members")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> AddMember(
             Guid id, [FromBody] AddProjectMemberDto dto)
         {
@@ -196,11 +228,12 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<IEnumerable<ProjectMemberDto>>.Ok(result));
         }
 
-        // DELETE api/projects/{id}/members/{userId}
-        [HttpDelete("{id:guid}/members/{userId:guid}")]
-        public async Task<ActionResult<ApiResponse>> RemoveMember(Guid id, Guid userId)
+        // DELETE api/projects/{id}/members/{memberIdOrUserId}
+        [HttpDelete("{id:guid}/members/{memberIdOrUserId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse>> RemoveMember(Guid id, Guid memberIdOrUserId)
         {
-            await _service.RemoveMemberAsync(id, userId);
+            await _service.RemoveMemberAsync(id, memberIdOrUserId);
             return Ok(ApiResponse.Ok("Membre retiré du projet avec succès."));
         }
 
@@ -212,6 +245,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPost("{id:guid}/deliverables")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<DeliverableBreakdownDto>>> AddDeliverable(Guid id, [FromBody] CreateDeliverableBreakdownDto dto)
         {
             var result = await _service.AddDeliverableAsync(id, dto);
@@ -219,6 +253,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPut("{id:guid}/deliverables/{deliverableId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<DeliverableBreakdownDto>>> UpdateDeliverable(Guid id, Guid deliverableId, [FromBody] UpdateDeliverableBreakdownDto dto)
         {
             var result = await _service.UpdateDeliverableAsync(id, deliverableId, dto);
@@ -226,6 +261,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpDelete("{id:guid}/deliverables/{deliverableId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> DeleteDeliverable(Guid id, Guid deliverableId)
         {
             await _service.DeleteDeliverableAsync(id, deliverableId);
@@ -264,6 +300,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPost("{id:guid}/timeline")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectTimelineEntryDto>>> AddTimelineEntry(Guid id, [FromBody] CreateProjectTimelineEntryDto dto)
         {
             var result = await _service.AddTimelineEntryAsync(id, dto);
@@ -271,6 +308,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPut("{id:guid}/timeline/{entryId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectTimelineEntryDto>>> UpdateTimelineEntry(Guid id, Guid entryId, [FromBody] UpdateProjectTimelineEntryDto dto)
         {
             var result = await _service.UpdateTimelineEntryAsync(id, entryId, dto);
@@ -278,6 +316,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpDelete("{id:guid}/timeline/{entryId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> DeleteTimelineEntry(Guid id, Guid entryId)
         {
             await _service.DeleteTimelineEntryAsync(id, entryId);
@@ -299,6 +338,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPost("{id:guid}/roadblocks")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectRoadblockDto>>> AddRoadblock(Guid id, [FromBody] CreateProjectRoadblockDto dto)
         {
             var result = await _service.AddRoadblockAsync(id, dto);
@@ -306,6 +346,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPut("{id:guid}/roadblocks/{roadblockId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectRoadblockDto>>> UpdateRoadblock(Guid id, Guid roadblockId, [FromBody] UpdateProjectRoadblockDto dto)
         {
             var result = await _service.UpdateRoadblockAsync(id, roadblockId, dto);
@@ -313,6 +354,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpDelete("{id:guid}/roadblocks/{roadblockId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> DeleteRoadblock(Guid id, Guid roadblockId)
         {
             await _service.DeleteRoadblockAsync(id, roadblockId);
@@ -327,6 +369,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPost("{id:guid}/interns")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectInternAllocationDto>>> AddInternAllocation(Guid id, [FromBody] CreateProjectInternAllocationDto dto)
         {
             var result = await _service.AddInternAllocationAsync(id, dto);
@@ -334,6 +377,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpPut("{id:guid}/interns/{allocationId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse<ProjectInternAllocationDto>>> UpdateInternAllocation(Guid id, Guid allocationId, [FromBody] UpdateProjectInternAllocationDto dto)
         {
             var result = await _service.UpdateInternAllocationAsync(id, allocationId, dto);
@@ -341,6 +385,7 @@ namespace PMHUB.API.Controllers
         }
 
         [HttpDelete("{id:guid}/interns/{allocationId:guid}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<ApiResponse>> DeleteInternAllocation(Guid id, Guid allocationId)
         {
             await _service.DeleteInternAllocationAsync(id, allocationId);
@@ -409,5 +454,8 @@ namespace PMHUB.API.Controllers
 
             return userId;
         }
+
+        private bool IsCurrentUserAdmin() =>
+            string.Equals(User.FindFirst("isAdmin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
     }
 }

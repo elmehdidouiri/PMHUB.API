@@ -70,6 +70,74 @@ namespace PMHUB.Application.Services
             return result;
         }
 
+        public async Task<DashboardExtendedAdminDto> GetAllProjectsExtendedDashboardAsync(DashboardQueryDto query, Guid? requesterUserId = null)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetExtendedAdminDashboardAsync(query, isAdminScope: true);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Extended dashboard all projects generated in {DurationMs} ms | requester={Requester} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                requesterUserId,
+                query);
+
+            return result;
+        }
+
+        public async Task<DashboardAdminBiDto> GetAllProjectsBiDashboardAsync(DashboardQueryDto query, Guid? requesterUserId = null)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetAdminBiDashboardAsync(query, isAdminScope: true);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "BI dashboard all projects generated in {DurationMs} ms | requester={Requester} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                requesterUserId,
+                query);
+
+            return result;
+        }
+
+        public async Task<DashboardExtendedAdminDto> GetMyExtendedDashboardAsync(Guid userId, DashboardQueryDto query)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetExtendedAdminDashboardAsync(query, isAdminScope: false, userId);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "Extended dashboard user generated in {DurationMs} ms | userId={UserId} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                userId,
+                query);
+
+            return result;
+        }
+
+        public async Task<DashboardAdminBiDto> GetMyBiDashboardAsync(Guid userId, DashboardQueryDto query)
+        {
+            NormalizeQuery(query);
+
+            var sw = Stopwatch.StartNew();
+            var result = await _dashboardRepository.GetAdminBiDashboardAsync(query, isAdminScope: false, userId);
+            sw.Stop();
+
+            _logger.LogInformation(
+                "BI dashboard user generated in {DurationMs} ms | userId={UserId} | filters={@Filters}",
+                sw.ElapsedMilliseconds,
+                userId,
+                query);
+
+            return result;
+        }
+
         public async Task<DashboardGroupedDistributionDto> GetGroupedDistributionAsync(DashboardQueryDto query, Guid? requesterUserId = null)
         {
             NormalizeQuery(query);

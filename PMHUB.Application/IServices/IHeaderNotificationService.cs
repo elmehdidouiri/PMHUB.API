@@ -9,6 +9,7 @@ namespace PMHUB.Application.IServices
             int recentUpdatedDays = 7,
             int lowProgressThreshold = 70,
             int maxItems = 50,
+            bool includeAdminNotifications = true,
             CancellationToken cancellationToken = default);
     }
 }

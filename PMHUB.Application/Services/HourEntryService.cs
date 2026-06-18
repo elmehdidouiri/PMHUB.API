@@ -289,6 +289,13 @@ namespace PMHUB.Application.Services.Implementation
             return entries.OrderByDescending(h => h.Date).ToSummaryDtoList();
         }
 
+        public async Task<IEnumerable<HourEntrySummaryDto>> GetMyEntriesByProjectAsync(Guid userId, Guid projectId)
+        {
+            _logger.LogInformation("GetMyEntriesByProjectAsync — User: {UserId}, ProjectId: {ProjectId}", userId, projectId);
+            var entries = await _hourEntryRepository.FindWithIncludesAsync(h => h.UserId == userId && h.ProjectId == projectId);
+            return entries.OrderByDescending(h => h.Date).ToSummaryDtoList();
+        }
+
         public async Task<IEnumerable<HourEntrySummaryDto>> GetByProjectAsync(Guid projectId)
         {
             _logger.LogInformation("GetByProjectAsync — ProjectId: {ProjectId}", projectId);

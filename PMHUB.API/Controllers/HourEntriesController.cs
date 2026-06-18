@@ -102,7 +102,20 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<IEnumerable<HourEntrySummaryDto>>.Ok(result ?? Enumerable.Empty<HourEntrySummaryDto>()));
         }
 
+        [HttpGet("my/project/{projectId:guid}")]
+        public async Task<IActionResult> GetMyEntriesByProject(Guid projectId)
+        {
+            var userId = GetAuthenticatedUserId();
+            _logger.LogInformation("Recuperation des entrees pour User {UserId} sur Projet {ProjectId}", userId, projectId);
+
+            var result = await _hourEntryService.GetMyEntriesByProjectAsync(userId, projectId);
+
+            _logger.LogInformation("{Count} entrees recuperees pour User {UserId} sur Projet {ProjectId}", result?.Count() ?? 0, userId, projectId);
+            return Ok(ApiResponse<IEnumerable<HourEntrySummaryDto>>.Ok(result ?? Enumerable.Empty<HourEntrySummaryDto>()));
+        }
+
         [HttpGet("project/{projectId}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<IActionResult> GetByProject(Guid projectId)
         {
             _logger.LogInformation("Récupération des entrées pour Projet {ProjectId}", projectId);

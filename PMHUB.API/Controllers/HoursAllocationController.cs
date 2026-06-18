@@ -8,7 +8,7 @@ namespace PMHUB.API.Controllers
 {
     [ApiController]
     [Route("api/hours-allocation")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public class HoursAllocationController : ControllerBase
     {
         private readonly IHoursAllocationDashboardService _hoursAllocationDashboardService;
@@ -32,6 +32,21 @@ namespace PMHUB.API.Controllers
             var result = await _hoursAllocationDashboardService.GetDashboardAsync(query);
             var message = result.Summary.Allocations == 0
                 ? "No hours allocation data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<HoursAllocationDashboardDto>.Ok(result, message));
+        }
+
+        [HttpGet("projects/{projectId:guid}/dashboard")]
+        public async Task<ActionResult<ApiResponse<HoursAllocationDashboardDto>>> GetProjectDashboard(
+            Guid projectId,
+            [FromQuery] HoursAllocationDashboardQueryDto query)
+        {
+            query.ProjectId = projectId;
+
+            var result = await _hoursAllocationDashboardService.GetDashboardAsync(query);
+            var message = result.Summary.Allocations == 0
+                ? "No hours allocation data was found for this project."
                 : null;
 
             return Ok(ApiResponse<HoursAllocationDashboardDto>.Ok(result, message));

@@ -98,6 +98,58 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<DashboardOverviewDto>.Ok(result, message));
         }
 
+        [HttpGet("all-projects/extended")]
+        [Authorize(Policy = "UserOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardExtendedAdminDto>>> GetAllProjectsExtendedDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var requesterId = GetAuthenticatedUserId();
+            var result = await _dashboardService.GetAllProjectsExtendedDashboardAsync(query, requesterId);
+            var message = result.Summary.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardExtendedAdminDto>.Ok(result, message));
+        }
+
+        [HttpGet("all-projects/bi")]
+        [Authorize(Policy = "UserOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardAdminBiDto>>> GetAllProjectsBiDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var requesterId = GetAuthenticatedUserId();
+            var result = await _dashboardService.GetAllProjectsBiDashboardAsync(query, requesterId);
+            var message = result.Summary.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardAdminBiDto>.Ok(result, message));
+        }
+
+        [HttpGet("me/extended")]
+        [Authorize(Policy = "UserOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardExtendedAdminDto>>> GetMyExtendedDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var userId = GetAuthenticatedUserId();
+            var result = await _dashboardService.GetMyExtendedDashboardAsync(userId, query);
+            var message = result.Summary.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardExtendedAdminDto>.Ok(result, message));
+        }
+
+        [HttpGet("me/bi")]
+        [Authorize(Policy = "UserOnly")]
+        public async Task<ActionResult<ApiResponse<DashboardAdminBiDto>>> GetMyBiDashboard([FromQuery] DashboardQueryDto query)
+        {
+            var userId = GetAuthenticatedUserId();
+            var result = await _dashboardService.GetMyBiDashboardAsync(userId, query);
+            var message = result.Summary.TotalProjects == 0
+                ? "No data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<DashboardAdminBiDto>.Ok(result, message));
+        }
+
         [HttpGet("me/performance")]
         [Authorize(Policy = "UserOnly")]
         public async Task<ActionResult<ApiResponse<DashboardPersonalPerformanceDto>>> GetMyPerformanceDashboard([FromQuery] DashboardQueryDto query)

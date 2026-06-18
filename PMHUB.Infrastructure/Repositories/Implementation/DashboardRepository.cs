@@ -471,11 +471,14 @@ namespace PMHUB.Infrastructure.Repositories
             };
         }
 
-        public async Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(DashboardQueryDto query)
+        public async Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(
+            DashboardQueryDto query,
+            bool isAdminScope = true,
+            Guid? userId = null)
         {
             await LoadTargetSettingsAsync();
 
-            var metrics = await GetAdminDashboardLightweightMetricsAsync(query);
+            var metrics = await GetAdminDashboardLightweightMetricsAsync(query, isAdminScope, userId);
 
             return new DashboardExtendedAdminDto
             {
@@ -493,11 +496,14 @@ namespace PMHUB.Infrastructure.Repositories
             };
         }
 
-        public async Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(DashboardQueryDto query)
+        public async Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(
+            DashboardQueryDto query,
+            bool isAdminScope = true,
+            Guid? userId = null)
         {
             await LoadTargetSettingsAsync();
 
-            var metrics = await GetAdminDashboardLightweightMetricsAsync(query);
+            var metrics = await GetAdminDashboardLightweightMetricsAsync(query, isAdminScope, userId);
 
             return new DashboardAdminBiDto
             {
@@ -514,10 +520,13 @@ namespace PMHUB.Infrastructure.Repositories
             };
         }
 
-        private async Task<DashboardAdminLightweightMetrics> GetAdminDashboardLightweightMetricsAsync(DashboardQueryDto query)
+        private async Task<DashboardAdminLightweightMetrics> GetAdminDashboardLightweightMetricsAsync(
+            DashboardQueryDto query,
+            bool isAdminScope = true,
+            Guid? userId = null)
         {
             var now = DateTime.UtcNow.Date;
-            var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope: true, userId: null);
+            var projectsQuery = BuildScopedProjectsQuery(query, isAdminScope, userId);
 
             var totalProjects = await projectsQuery.CountAsync();
             var delayedProjects = await projectsQuery.CountAsync(p =>

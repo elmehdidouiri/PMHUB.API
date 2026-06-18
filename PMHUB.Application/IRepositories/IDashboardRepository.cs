@@ -5,8 +5,8 @@ namespace PMHUB.Infrastructure.Repositories
     public interface IDashboardRepository
     {
         Task<DashboardOverviewDto> GetDashboardOverviewAsync(DashboardQueryDto query, bool isAdminScope, Guid? userId = null);
-        Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(DashboardQueryDto query);
-        Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(DashboardQueryDto query);
+        Task<DashboardExtendedAdminDto> GetExtendedAdminDashboardAsync(DashboardQueryDto query, bool isAdminScope = true, Guid? userId = null);
+        Task<DashboardAdminBiDto> GetAdminBiDashboardAsync(DashboardQueryDto query, bool isAdminScope = true, Guid? userId = null);
         Task<DashboardGroupedDistributionDto> GetGroupedDistributionAsync(DashboardQueryDto query);
         Task<DashboardGroupedDistributionCountsDto> GetGroupedDistributionCountsAsync(DashboardQueryDto query);
         Task<DashboardPersonalPerformanceDto> GetPersonalPerformanceDashboardAsync(Guid userId, DashboardQueryDto query);

@@ -24,10 +24,12 @@ namespace PMHUB.Application.IServices
         Task<IEnumerable<ProjectSummaryDto>> GetByStatusAsync(ProjectStatus status);
         Task<IEnumerable<ProjectSummaryDto>> GetByPhaseAsync(ProjectPhase phase);
         Task<ProjectDto> AddSubProjectAsync(Guid parentId, CreateSubProjectDto dto);
-        Task RemoveMemberAsync(Guid projectId, Guid userId);
+        Task RemoveMemberAsync(Guid projectId, Guid memberIdOrUserId);
         Task<ProjectDto> PatchAsync(Guid id, PatchProjectDto dto);
         Task<PaginatedResultDto<ProjectSummaryDto>> GetPagedAsync(ProjectSearchDto query);
         Task<string> ExportProjectsAsync(ProjectSearchDto query);
+        Task<IEnumerable<ProjectBookingExportDto>> GetProjectBookingHoursPreviewAsync(ProjectSearchDto query);
+        Task<string> ExportProjectBookingHoursAsync(ProjectSearchDto query);
         Task<IEnumerable<ProjectExportDto>> GetForExportAsync(DateTime startDate, DateTime endDate);
         Task<IEnumerable<DeliverableBreakdownDto>> GetDeliverablesAsync(Guid projectId);
         Task<DeliverableBreakdownDto> AddDeliverableAsync(Guid projectId, CreateDeliverableBreakdownDto dto);

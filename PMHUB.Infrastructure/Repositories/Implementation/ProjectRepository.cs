@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using PMHUB.Application.DTOs;
 using PMHUB.Domain.Entities;
+using PMHUB.Domain.Enums;
 using PMHUB.Infrastructure.Persistence;
 using PMHUB.Infrastructure.Repositories.Generique;
+using PMHUB.Shared.Helpers;
 using System.Linq.Expressions;
 
 namespace PMHUB.Infrastructure.Repositories
@@ -35,6 +37,9 @@ namespace PMHUB.Infrastructure.Repositories
 
         private IQueryable<Project> WithExportIncludes() =>
             WithSummaryIncludes()
+                .Include(p => p.HourEntries)
+                .Include(p => p.InternAllocations)
+                    .ThenInclude(ia => ia.Intern)
                 .Include(p => p.InternAllocations)
                     .ThenInclude(ia => ia.InternHourEntries);
 
@@ -219,6 +224,13 @@ namespace PMHUB.Infrastructure.Repositories
 
         private IQueryable<Project> ApplyProjectFilters(IQueryable<Project> queryable, ProjectSearchDto query)
         {
+            if (query.UserId.HasValue)
+            {
+                queryable = queryable.Where(p =>
+                    p.ProjectManagerId == query.UserId.Value ||
+                    p.ProjectMembers.Any(m => m.UserId == query.UserId.Value));
+            }
+
             if (!string.IsNullOrWhiteSpace(query.Search))
             {
                 queryable = queryable.Where(p =>
@@ -236,6 +248,9 @@ namespace PMHUB.Infrastructure.Repositories
                 queryable = queryable.Where(p => p.Phase == query.Phase.Value);
             else if (TryParseProjectPhase(query.ProjectPhase, out var projectPhase))
                 queryable = queryable.Where(p => p.Phase == projectPhase);
+
+            if (TryParseProcessStatus(query.ProcessStatus, out var processStatus))
+                queryable = queryable.Where(p => p.ProcessStatus == processStatus);
 
             if (query.ProjectType.HasValue)
                 queryable = queryable.Where(p => p.ProjectType == query.ProjectType.Value);
@@ -256,15 +271,16 @@ namespace PMHUB.Infrastructure.Repositories
                     (p.Department != null && p.Department.PlantId == query.PlantId.Value) ||
                     p.ProjectDepartments.Any(pd => pd.Department.PlantId == query.PlantId.Value));
 
+            if (query.ProjectId.HasValue)
+                queryable = queryable.Where(p => p.Id == query.ProjectId.Value);
+
+            if (query.RoleId.HasValue)
+                queryable = queryable.Where(p =>
+                    p.ProjectMembers.Any(m => m.RoleId == query.RoleId.Value) ||
+                    p.InternAllocations.Any(ia => ia.Intern.RoleId == query.RoleId.Value));
+
             if (query.ProjectManagerId.HasValue)
                 queryable = queryable.Where(p => p.ProjectManagerId == query.ProjectManagerId.Value);
-
-            if (query.UserId.HasValue)
-            {
-                queryable = queryable.Where(p => 
-                    p.ProjectManagerId == query.UserId.Value || 
-                    p.ProjectMembers.Any(m => m.UserId == query.UserId.Value));
-            }
 
             if (query.InternId.HasValue)
             {
@@ -278,6 +294,15 @@ namespace PMHUB.Infrastructure.Repositories
 
             if (period.EndExclusive.HasValue)
                 queryable = queryable.Where(p => p.StartDate < period.EndExclusive.Value);
+
+            if (query.DelayedOnly)
+            {
+                var today = DateTime.UtcNow.Date;
+                queryable = queryable.Where(p =>
+                    p.Status != ProjectStatus.Done &&
+                    p.EstimatedDueDate.HasValue &&
+                    p.EstimatedDueDate.Value.Date < today);
+            }
 
             if (query.IncompleteOnly)
                 queryable = queryable.Where(ProjectDataIncompletePredicate());
@@ -302,19 +327,43 @@ namespace PMHUB.Infrastructure.Repositories
             return queryable;
         }
 
-        private static bool TryParseProjectStatus(string? value, out PMHUB.Domain.Enums.ProjectStatus status)
+        private static bool TryParseProjectStatus(string? value, out ProjectStatus status)
         {
             return Enum.TryParse(value, true, out status);
         }
 
-        private static bool TryParseProjectPhase(string? value, out PMHUB.Domain.Enums.ProjectPhase phase)
+        private static bool TryParseProjectPhase(string? value, out ProjectPhase phase)
         {
             return Enum.TryParse(value, true, out phase);
         }
 
-        private static bool TryParseProjectManagementType(string? value, out PMHUB.Domain.Enums.Category type)
+        private static bool TryParseProcessStatus(string? value, out ProcessStatus status)
+        {
+            status = default;
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            if (Enum.TryParse(value, true, out status))
+                return true;
+
+            return value.Trim().ToLowerInvariant() switch
+            {
+                "asis" => TrySet(out status, ProcessStatus.AsIsProcessUnderstanding),
+                "tobe" => TrySet(out status, ProcessStatus.ToBeProcessDefinition),
+                "implemented" => TrySet(out status, ProcessStatus.ImplementedInPDMlink),
+                _ => false
+            };
+        }
+
+        private static bool TryParseProjectManagementType(string? value, out Category type)
         {
             return Enum.TryParse(value, true, out type);
+        }
+
+        private static bool TrySet<T>(out T target, T value)
+        {
+            target = value;
+            return true;
         }
 
         private static (DateTime? Start, DateTime? EndExclusive) ResolveProjectPeriod(ProjectSearchDto query)
@@ -324,15 +373,38 @@ namespace PMHUB.Infrastructure.Repositories
 
             if (!start.HasValue && !endExclusive.HasValue)
             {
-                if (query.Year.HasValue && query.Month is >= 1 and <= 12)
+                if (query.Ytd)
                 {
-                    start = new DateTime(query.Year.Value, query.Month.Value, 1);
+                    var companyYear = query.Year.HasValue && query.Year.Value > 0
+                        ? query.Year.Value
+                        : CompanyYearHelper.GetCurrentCompanyYear(DateTime.UtcNow.Date);
+
+                    start = CompanyYearHelper.GetCompanyYearStart(companyYear);
+
+                    if (query.Month is >= 1 and <= 12)
+                    {
+                        var calendarYear = query.Month.Value >= 10 ? companyYear - 1 : companyYear;
+                        endExclusive = new DateTime(calendarYear, query.Month.Value, 1).AddMonths(1);
+                    }
+                    else
+                    {
+                        var companyYearEndExclusive = CompanyYearHelper.GetCompanyYearEnd(companyYear).AddDays(1);
+                        var todayEndExclusive = DateTime.UtcNow.Date.AddDays(1);
+                        endExclusive = todayEndExclusive < companyYearEndExclusive
+                            ? todayEndExclusive
+                            : companyYearEndExclusive;
+                    }
+                }
+                else if (query.Year.HasValue && query.Month is >= 1 and <= 12)
+                {
+                    var calendarYear = query.Month.Value >= 10 ? query.Year.Value - 1 : query.Year.Value;
+                    start = new DateTime(calendarYear, query.Month.Value, 1);
                     endExclusive = start.Value.AddMonths(1);
                 }
                 else if (query.Year.HasValue)
                 {
-                    start = new DateTime(query.Year.Value, 1, 1);
-                    endExclusive = start.Value.AddYears(1);
+                    start = CompanyYearHelper.GetCompanyYearStart(query.Year.Value);
+                    endExclusive = CompanyYearHelper.GetCompanyYearEnd(query.Year.Value).AddDays(1);
                 }
             }
 

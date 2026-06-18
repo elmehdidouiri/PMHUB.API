@@ -169,9 +169,6 @@ namespace PMHUB.Application.Services
             var file = await _fileRepository.GetByIdWithIncludesAsync(id)
                 ?? throw new NotFoundException("ProjectFile", id);
 
-            if (file.FileType != Domain.Enums.ProjectFileType.Compliance)
-            throw new BadRequestException("Versioning is only available for Compliance files.");
-
             ProjectFileValidator.Validate(dto.File);
 
             var folder = file.FileType.ToString().ToLower();

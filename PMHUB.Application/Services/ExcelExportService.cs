@@ -169,6 +169,53 @@ namespace PMHUB.Application.Services
             return $"/exports/{fileName}";
         }
 
+        public string GenerateProjectBookingHoursExcel(IEnumerable<ProjectBookingExportDto> data, string periodLabel)
+        {
+            string folderPath = GetExportsFolder();
+            string fileName = $"Projects_BookingHours_{SanitizeFileName(periodLabel)}_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            string filePath = Path.Combine(folderPath, fileName);
+
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Projects Booking Hours");
+
+            var headers = new[]
+            {
+                "Projects",
+                "Phase",
+                "Estimated Hours",
+                "Departement",
+                "Sponsor",
+                "Cost Center",
+                $"Total Booking Hours {periodLabel}"
+            };
+
+            for (int i = 0; i < headers.Length; i++)
+                worksheet.Cell(1, i + 1).Value = headers[i];
+
+            var headerRange = worksheet.Range(1, 1, 1, headers.Length);
+            headerRange.Style.Font.Bold = true;
+            headerRange.Style.Fill.BackgroundColor = XLColor.DarkBlue;
+            headerRange.Style.Font.FontColor = XLColor.White;
+
+            int row = 2;
+            foreach (var item in data)
+            {
+                SetExportCellValue(worksheet.Cell(row, 1), item.Project);
+                SetExportCellValue(worksheet.Cell(row, 2), item.Phase);
+                SetExportCellValue(worksheet.Cell(row, 3), item.EstimatedHours);
+                SetExportCellValue(worksheet.Cell(row, 4), item.Department);
+                SetExportCellValue(worksheet.Cell(row, 5), item.Sponsor);
+                SetExportCellValue(worksheet.Cell(row, 6), item.CostCenter);
+                SetExportCellValue(worksheet.Cell(row, 7), item.TotalBookingHours);
+                row++;
+            }
+
+            worksheet.Columns().AdjustToContents();
+            workbook.SaveAs(filePath);
+
+            return $"/exports/{fileName}";
+        }
+
         private static string[] BuildProjectExportHeaders(
             string? exportType,
             int? fiscalYear,
@@ -267,6 +314,16 @@ namespace PMHUB.Application.Services
                 "fy" => $"FY{fiscalYear ?? GetCurrentFiscalYear()}",
                 _ => "Standard"
             };
+        }
+
+        private static string SanitizeFileName(string value)
+        {
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var sanitized = new string(value
+                .Select(ch => invalidChars.Contains(ch) || char.IsWhiteSpace(ch) ? '_' : ch)
+                .ToArray());
+
+            return string.IsNullOrWhiteSpace(sanitized) ? "Period" : sanitized;
         }
 
         private static void SetExportCellValue(IXLCell cell, object? value)

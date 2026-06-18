@@ -11,6 +11,7 @@ namespace PMHUB.Domain.Enums
         DigitalOperation = 0,
         DigitalSolution = 1,
         Infrastructure = 2,
-        ProcessSimplification = 3
+        ProcessSimplification = 3,
+        Other = 4
     }
 }

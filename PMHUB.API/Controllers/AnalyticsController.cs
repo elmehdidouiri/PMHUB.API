@@ -8,7 +8,7 @@ namespace PMHUB.API.Controllers
 {
     [ApiController]
     [Route("api/analytics")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public class AnalyticsController : ControllerBase
     {
         private readonly IAnalyticsService _analyticsService;

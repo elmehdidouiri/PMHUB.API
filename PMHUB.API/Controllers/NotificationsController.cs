@@ -8,7 +8,7 @@ namespace PMHUB.API.Controllers
 {
     [ApiController]
     [Route("api/notifications")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     public class NotificationsController : ControllerBase
     {
         private readonly IHeaderNotificationService _headerNotificationService;
@@ -26,11 +26,14 @@ namespace PMHUB.API.Controllers
             [FromQuery] int maxItems = 50,
             CancellationToken cancellationToken = default)
         {
+            var includeAdminNotifications = User.HasClaim("isAdmin", "true");
+
             var notifications = await _headerNotificationService.GetHeaderNotificationsAsync(
                 dueSoonDays,
                 recentUpdatedDays,
                 lowProgressThreshold,
                 maxItems,
+                includeAdminNotifications,
                 cancellationToken);
 
             return Ok(ApiResponse<HeaderNotificationSummaryDto>.Ok(notifications));
