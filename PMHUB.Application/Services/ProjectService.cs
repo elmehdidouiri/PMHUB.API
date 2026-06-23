@@ -128,7 +128,7 @@ namespace PMHUB.Application.Services
         public async Task<IEnumerable<ProjectSummaryDto>> GetAllAsync()
         {
             var projects = await _projectRepository.GetAllSummariesAsync();
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return ToCalculatedSummaryDtos(projects);
         }
 
         public async Task<DashboardStatsDto> GetUserDashboardStatsAsync(Guid userId)
@@ -229,7 +229,7 @@ namespace PMHUB.Application.Services
             var (items, totalCount) = await _projectRepository.GetPagedAsync(query);
             return new PaginatedResultDto<ProjectSummaryDto>
             {
-                Data = items.Select(ProjectMapper.ToSummaryDto),
+                Data = ToCalculatedSummaryDtos(items),
                 PageNumber = query.PageNumber,
                 PageSize = query.All ? totalCount : query.PageSize,
                 TotalCount = totalCount
@@ -243,7 +243,7 @@ namespace PMHUB.Application.Services
             var projects = IsBookingHoursExport(exportQuery.ExportType)
                 ? await _projectRepository.GetFilteredForExportAsync(exportQuery)
                 : await _projectRepository.GetFilteredAsync(exportQuery);
-            var dtos = projects.Select(ProjectMapper.ToSummaryDto);
+            var dtos = ToCalculatedSummaryDtos(projects);
             return _excelExportService.GenerateProjectsExcel(dtos, exportQuery.ExportType, fiscalYear);
         }
 
@@ -441,6 +441,7 @@ namespace PMHUB.Application.Services
             var project = await _projectRepository.GetByIdWithIncludesAsync(id)
                 ?? throw new NotFoundException("Project", id);
 
+            ApplyCalculatedHoursAndProgress(project);
             return ProjectMapper.ToDto(project, null);
         }
 
@@ -806,7 +807,7 @@ namespace PMHUB.Application.Services
             var projects = await _projectRepository.FindSummariesAsync(
                 p => p.DepartmentId == departmentId ||
                      p.ProjectDepartments.Any(pd => pd.DepartmentId == departmentId));
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return ToCalculatedSummaryDtos(projects);
         }
 
         public async Task<IEnumerable<ProjectSummaryDto>> GetByBusinessUnitAsync(
@@ -817,7 +818,7 @@ namespace PMHUB.Application.Services
 
             var projects = await _projectRepository.FindSummariesAsync(
                 p => p.ProjectBusinessUnits.Any(pbu => pbu.BusinessUnitId == businessUnitId));
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return ToCalculatedSummaryDtos(projects);
         }
 
         public async Task<IEnumerable<ProjectSummaryDto>> GetByPlantAsync(Guid plantId)
@@ -825,21 +826,21 @@ namespace PMHUB.Application.Services
             var projects = await _projectRepository.FindSummariesAsync(
                 p => (p.Department != null && p.Department.PlantId == plantId) ||
                      p.ProjectDepartments.Any(pd => pd.Department.PlantId == plantId));
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return ToCalculatedSummaryDtos(projects);
         }
 
         public async Task<IEnumerable<ProjectSummaryDto>> GetByStatusAsync(ProjectStatus status)
         {
             var projects = await _projectRepository.FindSummariesAsync(
                 p => p.Status == status);
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return ToCalculatedSummaryDtos(projects);
         }
 
         public async Task<IEnumerable<ProjectSummaryDto>> GetByPhaseAsync(ProjectPhase phase)
         {
             var projects = await _projectRepository.FindSummariesAsync(
                 p => p.Phase == phase);
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return ToCalculatedSummaryDtos(projects);
         }
 
         // ── SOUS-PROJETS ──────────────────────────────────────
@@ -2146,6 +2147,23 @@ namespace PMHUB.Application.Services
 
             var percentage = Math.Round((actualHours / estimatedHours) * 100m, MidpointRounding.AwayFromZero);
             return (int)Math.Clamp(percentage, 0m, 100m);
+        }
+
+        private static IEnumerable<ProjectSummaryDto> ToCalculatedSummaryDtos(IEnumerable<Project> projects)
+        {
+            return projects.Select(project =>
+            {
+                ApplyCalculatedHoursAndProgress(project);
+
+                return ProjectMapper.ToSummaryDto(project);
+            });
+        }
+
+        private static void ApplyCalculatedHoursAndProgress(Project project)
+        {
+            var actualHours = project.HourEntries.Sum(entry => entry.TotalHours);
+            project.ActualHours = actualHours;
+            project.ProgressPercentage = CalculateProjectProgressPercentage(actualHours, project.EstimatedHours);
         }
 
         private async Task RecalculateInternAllocationHoursWorkedAsync(Guid allocationId)

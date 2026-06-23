@@ -14,13 +14,16 @@ namespace PMHUB.Application.Services.Implementation
 
         private readonly IProjectRepository _projectRepository;
         private readonly IHourBookingReminderService _hourBookingReminderService;
+        private readonly IRepository<HeaderNotificationState> _notificationStateRepository;
 
         public HeaderNotificationService(
             IProjectRepository projectRepository,
-            IHourBookingReminderService hourBookingReminderService)
+            IHourBookingReminderService hourBookingReminderService,
+            IRepository<HeaderNotificationState> notificationStateRepository)
         {
             _projectRepository = projectRepository;
             _hourBookingReminderService = hourBookingReminderService;
+            _notificationStateRepository = notificationStateRepository;
         }
 
         public async Task<HeaderNotificationSummaryDto> GetHeaderNotificationsAsync(
@@ -29,14 +32,129 @@ namespace PMHUB.Application.Services.Implementation
             int lowProgressThreshold = 70,
             int maxItems = 50,
             bool includeAdminNotifications = true,
+            Guid? userId = null,
             CancellationToken cancellationToken = default)
         {
-            var today = DateTime.UtcNow.Date;
             dueSoonDays = Math.Max(dueSoonDays, 1);
             recentUpdatedDays = Math.Max(recentUpdatedDays, 1);
             lowProgressThreshold = Math.Max(0, Math.Min(lowProgressThreshold, 100));
             maxItems = Math.Max(maxItems, 1);
 
+            var notifications = await BuildCurrentNotificationsAsync(
+                dueSoonDays,
+                recentUpdatedDays,
+                lowProgressThreshold,
+                includeAdminNotifications,
+                cancellationToken);
+
+            var visibleNotifications = userId.HasValue
+                ? await ApplyUserStateAsync(userId.Value, notifications, cancellationToken)
+                : notifications;
+
+            var orderedItems = visibleNotifications
+                .OrderBy(n => SeverityRank(n.Severity))
+                .ThenBy(n => GroupRank(n.GroupKey))
+                .ThenBy(n => n.OccurredAt ?? n.CreatedAt)
+                .Take(maxItems)
+                .ToList();
+
+            return BuildSummary(orderedItems);
+        }
+
+        public async Task<HeaderNotificationStateChangeDto> MarkAllAsReadAsync(
+            Guid userId,
+            int dueSoonDays = 14,
+            int recentUpdatedDays = 7,
+            int lowProgressThreshold = 70,
+            bool includeAdminNotifications = true,
+            CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            var notifications = await BuildCurrentNotificationsAsync(
+                Math.Max(dueSoonDays, 1),
+                Math.Max(recentUpdatedDays, 1),
+                Math.Max(0, Math.Min(lowProgressThreshold, 100)),
+                includeAdminNotifications,
+                cancellationToken);
+
+            var affectedCount = await UpsertStatesAsync(
+                userId,
+                notifications.Select(n => n.Id),
+                now,
+                markRead: true,
+                dismiss: false,
+                cancellationToken);
+
+            return new HeaderNotificationStateChangeDto
+            {
+                AffectedCount = affectedCount,
+                UpdatedAt = now
+            };
+        }
+
+        public async Task<HeaderNotificationStateChangeDto> ClearAllAsync(
+            Guid userId,
+            int dueSoonDays = 14,
+            int recentUpdatedDays = 7,
+            int lowProgressThreshold = 70,
+            bool includeAdminNotifications = true,
+            CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            var notifications = await BuildCurrentNotificationsAsync(
+                Math.Max(dueSoonDays, 1),
+                Math.Max(recentUpdatedDays, 1),
+                Math.Max(0, Math.Min(lowProgressThreshold, 100)),
+                includeAdminNotifications,
+                cancellationToken);
+
+            var affectedCount = await UpsertStatesAsync(
+                userId,
+                notifications.Select(n => n.Id),
+                now,
+                markRead: true,
+                dismiss: true,
+                cancellationToken);
+
+            return new HeaderNotificationStateChangeDto
+            {
+                AffectedCount = affectedCount,
+                UpdatedAt = now
+            };
+        }
+
+        public async Task<HeaderNotificationStateChangeDto> ResetAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            var states = (await _notificationStateRepository.FindAsync(state => state.UserId == userId)).ToList();
+
+            foreach (var state in states)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _notificationStateRepository.Remove(state);
+            }
+
+            if (states.Count > 0)
+            {
+                await _notificationStateRepository.SaveChangesAsync();
+            }
+
+            return new HeaderNotificationStateChangeDto
+            {
+                AffectedCount = states.Count,
+                UpdatedAt = DateTime.UtcNow
+            };
+        }
+
+        private async Task<List<HeaderNotificationDto>> BuildCurrentNotificationsAsync(
+            int dueSoonDays,
+            int recentUpdatedDays,
+            int lowProgressThreshold,
+            bool includeAdminNotifications,
+            CancellationToken cancellationToken)
+        {
+            var today = DateTime.UtcNow.Date;
             var dueLimit = today.AddDays(dueSoonDays);
             var recentlyUpdatedSince = DateTime.UtcNow.AddDays(-recentUpdatedDays);
             var notifications = new List<HeaderNotificationDto>();
@@ -59,14 +177,103 @@ namespace PMHUB.Application.Services.Implementation
                 await AddBookingNotificationsAsync(notifications, cancellationToken);
             }
 
-            var orderedItems = notifications
-                .OrderBy(n => SeverityRank(n.Severity))
-                .ThenBy(n => GroupRank(n.GroupKey))
-                .ThenBy(n => n.OccurredAt ?? n.CreatedAt)
-                .Take(maxItems)
+            return notifications;
+        }
+
+        private async Task<List<HeaderNotificationDto>> ApplyUserStateAsync(
+            Guid userId,
+            IEnumerable<HeaderNotificationDto> notifications,
+            CancellationToken cancellationToken)
+        {
+            var items = notifications.ToList();
+            if (items.Count == 0)
+            {
+                return items;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var notificationIds = items.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+            var states = (await _notificationStateRepository.FindAsync(state => state.UserId == userId))
+                .Where(state => notificationIds.Contains(state.NotificationId))
+                .ToDictionary(state => state.NotificationId, StringComparer.Ordinal);
+
+            return items
+                .Where(item =>
+                {
+                    if (!states.TryGetValue(item.Id, out var state))
+                    {
+                        return true;
+                    }
+
+                    item.IsRead = state.IsRead;
+                    return !state.IsDismissed;
+                })
+                .ToList();
+        }
+
+        private async Task<int> UpsertStatesAsync(
+            Guid userId,
+            IEnumerable<string> notificationIds,
+            DateTime now,
+            bool markRead,
+            bool dismiss,
+            CancellationToken cancellationToken)
+        {
+            var ids = notificationIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
 
-            return BuildSummary(orderedItems);
+            if (ids.Count == 0)
+            {
+                return 0;
+            }
+
+            var existingStates = (await _notificationStateRepository.FindAsync(state => state.UserId == userId))
+                .Where(state => ids.Contains(state.NotificationId, StringComparer.Ordinal))
+                .ToDictionary(state => state.NotificationId, StringComparer.Ordinal);
+
+            foreach (var notificationId in ids)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!existingStates.TryGetValue(notificationId, out var state))
+                {
+                    state = new HeaderNotificationState
+                    {
+                        UserId = userId,
+                        NotificationId = notificationId,
+                        CreatedAtUtc = now
+                    };
+                }
+
+                if (markRead)
+                {
+                    state.IsRead = true;
+                    state.ReadAtUtc ??= now;
+                }
+
+                if (dismiss)
+                {
+                    state.IsDismissed = true;
+                    state.DismissedAtUtc ??= now;
+                }
+
+                state.UpdatedAtUtc = now;
+
+                if (existingStates.ContainsKey(notificationId))
+                {
+                    _notificationStateRepository.Update(state);
+                }
+                else
+                {
+                    await _notificationStateRepository.AddAsync(state);
+                }
+            }
+
+            await _notificationStateRepository.SaveChangesAsync();
+            return ids.Count;
         }
 
         private static void AddProjectDueNotifications(

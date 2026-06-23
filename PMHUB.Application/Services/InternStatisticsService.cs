@@ -4,6 +4,7 @@ using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
 using PMHUB.Infrastructure.Repositories;
+using PMHUB.Infrastructure.Repositories.Implementation;
 using PMHUB.Shared.Helpers;
 
 namespace PMHUB.Application.Services
@@ -11,14 +12,14 @@ namespace PMHUB.Application.Services
     public class InternStatisticsService : IInternStatisticsService
     {
         private readonly IRepository<Intern> _internRepository;
-        private readonly IRepository<InternAllocation> _internAllocationRepository;
+        private readonly IInternAllocationRepository _internAllocationRepository;
         private readonly IRepository<InternHourEntry> _internHourEntryRepository;
         private readonly IRepository<User> _userRepository;
         private readonly ILogger<InternStatisticsService> _logger;
 
         public InternStatisticsService(
             IRepository<Intern> internRepository,
-            IRepository<InternAllocation> internAllocationRepository,
+            IInternAllocationRepository internAllocationRepository,
             IRepository<InternHourEntry> internHourEntryRepository,
             IRepository<User> userRepository,
             ILogger<InternStatisticsService> logger)
@@ -161,10 +162,13 @@ namespace PMHUB.Application.Services
             _logger.LogInformation("GetInternPeriodStatisticsAsync - InternId: {InternId}, Year: {Year}, Month: {Month}", 
                 internId, year, month);
 
+            if (year < 1 || year > 9999)
+                throw new BadRequestException("Year must be between 1 and 9999.");
+
             var intern = await _internRepository.GetByIdAsync(internId)
                 ?? throw new NotFoundException("Intern", internId);
 
-            var allocations = (await _internAllocationRepository.FindAsync(ia => ia.InternId == internId)).ToList();
+            var allocations = (await _internAllocationRepository.FindWithIncludesAsync(ia => ia.InternId == internId)).ToList();
 
             // Filtrer les entrées par période
             var startDate = month.HasValue
@@ -189,14 +193,23 @@ namespace PMHUB.Application.Services
             var workDays = hourEntries.Select(e => e.Date.Date).Distinct().Count();
             var averageHours = workDays > 0 ? totalHours / workDays : 0m;
 
-            var projectBreakdowns = hourEntries
-                .GroupBy(e => new { e.InternAllocation.ProjectId, e.InternAllocation.Project.Name })
+            var projectBreakdowns = allocations
+                .Select(allocation => new
+                {
+                    allocation.ProjectId,
+                    ProjectName = allocation.Project?.Name ?? string.Empty,
+                    Hours = allocation.InternHourEntries
+                        .Where(e => e.Date >= startDate && e.Date <= endDate)
+                        .Sum(e => e.Hours)
+                })
+                .Where(x => x.Hours > 0)
+                .GroupBy(x => new { x.ProjectId, x.ProjectName })
                 .Select(g => new InternPeriodProjectStatsDto
                 {
                     ProjectId = g.Key.ProjectId,
-                    ProjectName = g.Key.Name,
-                    Hours = g.Sum(e => e.Hours),
-                    Percentage = totalHours > 0 ? (g.Sum(e => e.Hours) / totalHours) * 100m : 0m
+                    ProjectName = g.Key.ProjectName,
+                    Hours = g.Sum(x => x.Hours),
+                    Percentage = totalHours > 0 ? (g.Sum(x => x.Hours) / totalHours) * 100m : 0m
                 })
                 .OrderByDescending(x => x.Hours)
                 .ToList();

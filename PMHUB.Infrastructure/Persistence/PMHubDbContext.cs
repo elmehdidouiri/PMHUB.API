@@ -68,6 +68,7 @@ namespace PMHUB.Infrastructure.Persistence
 
         public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
         public DbSet<PasswordResetCode> PasswordResetCodes { get; set; } = null!;
+        public DbSet<HeaderNotificationState> HeaderNotificationStates { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -107,6 +108,16 @@ namespace PMHUB.Infrastructure.Persistence
                 .HasIndex(prc => prc.ResetTokenHash)
                 .IsUnique()
                 .HasFilter("[ResetTokenHash] IS NOT NULL");
+
+            builder.Entity<HeaderNotificationState>()
+                .HasOne(state => state.User)
+                .WithMany()
+                .HasForeignKey(state => state.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Entity<HeaderNotificationState>()
+                .HasIndex(state => new { state.UserId, state.NotificationId })
+                .IsUnique();
 
             // ── Role  
             builder.Entity<Role>()

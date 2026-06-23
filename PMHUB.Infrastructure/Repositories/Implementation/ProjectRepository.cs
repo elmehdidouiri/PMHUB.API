@@ -33,11 +33,11 @@ namespace PMHUB.Infrastructure.Repositories
                 .Include(p => p.ProjectMembers)
                 .Include(p => p.ProjectResources)
                 .Include(p => p.StrategicCriteria)
-                .Include(p => p.KPIs);
+                .Include(p => p.KPIs)
+                .Include(p => p.HourEntries);
 
         private IQueryable<Project> WithExportIncludes() =>
             WithSummaryIncludes()
-                .Include(p => p.HourEntries)
                 .Include(p => p.InternAllocations)
                     .ThenInclude(ia => ia.Intern)
                 .Include(p => p.InternAllocations)

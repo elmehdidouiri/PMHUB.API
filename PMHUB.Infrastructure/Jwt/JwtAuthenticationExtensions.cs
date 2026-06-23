@@ -63,6 +63,19 @@ namespace PMHUB.Infrastructure.Jwt
 
                             var response = ApiResponse.Fail("Not authorised.");
                             await context.Response.WriteAsJsonAsync(response);
+                        },
+                        OnMessageReceived = context =>
+                        {
+                            var accessToken = context.Request.Query["access_token"];
+                            var path = context.HttpContext.Request.Path;
+
+                            if (!string.IsNullOrWhiteSpace(accessToken) &&
+                                path.StartsWithSegments("/hubs/admin-notifications"))
+                            {
+                                context.Token = accessToken;
+                            }
+
+                            return Task.CompletedTask;
                         }
                     };
                 });

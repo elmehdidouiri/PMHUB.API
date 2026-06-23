@@ -16,9 +16,12 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         public async Task<IEnumerable<InternAllocation>> FindWithIncludesAsync(Expression<Func<InternAllocation, bool>> predicate)
         {
             return await _dbSet
+                .AsSplitQuery()
                 .Include(ia => ia.Intern)
                 .Include(ia => ia.Project)
+                .Include(ia => ia.InternHourEntries)
                 .Where(predicate)
+                .AsNoTracking()
                 .ToListAsync();
         }
     }

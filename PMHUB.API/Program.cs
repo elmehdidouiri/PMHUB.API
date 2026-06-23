@@ -4,7 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using PMHUB.API.BackgroundServices;
 using PMHUB.API.Helpers;
+using PMHUB.API.Hubs;
 using PMHUB.API.Middleware;
+using PMHUB.API.Services;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IRepositories;
@@ -36,6 +38,8 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 builder.Services.AddControllers();
+builder.Services.AddSignalR();
+builder.Services.AddHealthChecks();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
@@ -62,7 +66,8 @@ builder.Services.AddCors(options =>
     {
         corsBuilder.WithOrigins("http://localhost:4200")
             .AllowAnyMethod()
-            .AllowAnyHeader();
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
@@ -129,6 +134,7 @@ builder.Services.AddScoped<IRepository<UserHourlyRate>, Repository<UserHourlyRat
 builder.Services.AddScoped<IRepository<Holiday>, Repository<Holiday>>();
 
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<IEmailTemplateRenderer, EmailTemplateRenderer>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
@@ -151,6 +157,7 @@ builder.Services.AddScoped<IHoursAllocationDashboardService, HoursAllocationDash
 builder.Services.AddScoped<IInternStatisticsService, InternStatisticsService>();
 builder.Services.AddScoped<IHourBookingReminderService, HourBookingReminderService>();
 builder.Services.AddScoped<IHeaderNotificationService, HeaderNotificationService>();
+builder.Services.AddScoped<IBookingActivityNotificationPublisher, SignalRBookingActivityNotificationPublisher>();
 builder.Services.AddScoped<ITargetSettingsService, TargetSettingsService>();
 builder.Services.AddHostedService<WeeklyHourBookingReminderHostedService>();
 
@@ -200,6 +207,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health");
+app.MapHub<AdminNotificationHub>("/hubs/admin-notifications");
 
 Log.Information("PMHUB application started");
 app.Run();

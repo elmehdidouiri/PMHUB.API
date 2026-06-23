@@ -39,4 +39,10 @@ namespace PMHUB.Application.DTOs
         public bool IsRead { get; set; }
         public IDictionary<string, object?> Metadata { get; set; } = new Dictionary<string, object?>();
     }
+
+    public class HeaderNotificationStateChangeDto
+    {
+        public int AffectedCount { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
 }

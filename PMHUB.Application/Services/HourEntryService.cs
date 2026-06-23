@@ -18,20 +18,22 @@ namespace PMHUB.Application.Services.Implementation
     public class HourEntryService : IHourEntryService
     {
         private readonly IHourEntryRepository _hourEntryRepository;
-        private readonly IRepository<Project> _projectRepository;
+        private readonly IProjectRepository _projectRepository;
         private readonly IUserRepository _userRepository;
         private readonly IRepository<UserHourlyRate> _userHourlyRateRepository;
         private readonly IInternAllocationRepository _internAllocationRepository;
         private readonly ITargetSettingsService _targetSettingsService;
+        private readonly IBookingActivityNotificationPublisher _bookingActivityNotificationPublisher;
         private readonly ILogger<HourEntryService> _logger;
 
         public HourEntryService(
             IHourEntryRepository hourEntryRepository,
-            IRepository<Project> projectRepository,
+            IProjectRepository projectRepository,
             IUserRepository userRepository,
             IRepository<UserHourlyRate> userHourlyRateRepository,
             IInternAllocationRepository internAllocationRepository,
             ITargetSettingsService targetSettingsService,
+            IBookingActivityNotificationPublisher bookingActivityNotificationPublisher,
             ILogger<HourEntryService> logger)
         {
             _hourEntryRepository = hourEntryRepository;
@@ -40,6 +42,7 @@ namespace PMHUB.Application.Services.Implementation
             _userHourlyRateRepository = userHourlyRateRepository;
             _internAllocationRepository = internAllocationRepository;
             _targetSettingsService = targetSettingsService;
+            _bookingActivityNotificationPublisher = bookingActivityNotificationPublisher;
             _logger = logger;
         }
 
@@ -83,6 +86,7 @@ namespace PMHUB.Application.Services.Implementation
                 throw new BadRequestException("No dates selected for booking.");
 
             HourEntry? lastCreatedEntry = null;
+            var createdEntries = new List<HourEntry>();
             Project? project = null;
 
             if (isProjectWorkMode)
@@ -162,6 +166,7 @@ namespace PMHUB.Application.Services.Implementation
 
                 await _hourEntryRepository.AddAsync(hourEntry);
                 lastCreatedEntry = hourEntry;
+                createdEntries.Add(hourEntry);
             }
 
             await _hourEntryRepository.SaveChangesAsync();
@@ -172,6 +177,17 @@ namespace PMHUB.Application.Services.Implementation
             if (project is not null)
             {
                 await RecalculateProjectActualHoursAndProgressAsync(project.Id);
+            }
+
+            foreach (var createdEntry in createdEntries)
+            {
+                await PublishBookingActivityAsync(
+                    BuildBookingActivityNotification(
+                        createdEntry,
+                        user,
+                        project?.Name ?? createdEntry.Category.ToString(),
+                        "created"),
+                    "created");
             }
 
             return lastCreatedEntry.ToDto(project?.Name ?? lastCreatedEntry.Category.ToString(), $"{user.FirstName} {user.LastName}");
@@ -230,6 +246,17 @@ namespace PMHUB.Application.Services.Implementation
                     : null;
                 var user = await _userRepository.GetNormalUserByIdAsync(userId);
 
+                if (user is not null)
+                {
+                    await PublishBookingActivityAsync(
+                        BuildBookingActivityNotification(
+                            entry,
+                            user,
+                            project?.Name ?? entry.Category.ToString(),
+                            "updated"),
+                        "updated");
+                }
+
                 _logger.LogInformation("UpdateAsync terminé — HourEntryId: {HourEntryId}, TotalHours: {TotalHours}", entry.Id, entry.TotalHours);
 
                 return entry.ToDto(project?.Name ?? entry.Category.ToString(), $"{user!.FirstName} {user.LastName}");
@@ -254,10 +281,23 @@ namespace PMHUB.Application.Services.Implementation
             throw new ForbiddenException("You can only delete your own bookings.");
 
                 var projectId = entry.ProjectId;
+                var project = projectId.HasValue
+                    ? await _projectRepository.GetByIdAsync(projectId.Value)
+                    : null;
+                var user = await _userRepository.GetNormalUserByIdAsync(userId)
+                    ?? throw new NotFoundException("User", userId);
+                var notification = BuildBookingActivityNotification(
+                    entry,
+                    user,
+                    project?.Name ?? entry.Category.ToString(),
+                    "deleted");
+
                 _hourEntryRepository.Remove(entry);
                 await _hourEntryRepository.SaveChangesAsync();
                 if (projectId.HasValue)
                     await RecalculateProjectActualHoursAndProgressAsync(projectId.Value);
+
+                await PublishBookingActivityAsync(notification, "deleted");
 
                 _logger.LogInformation("DeleteAsync terminé — HourEntryId: {HourEntryId}", id);
             }
@@ -444,9 +484,16 @@ namespace PMHUB.Application.Services.Implementation
         public async Task<IEnumerable<ProjectSummaryDto>> GetMyProjectsAsync(Guid userId)
         {
             _logger.LogInformation("GetMyProjectsAsync — User: {UserId}", userId);
-            var projects = await _projectRepository.FindAsync(p =>
+            var projects = await _projectRepository.FindSummariesAsync(p =>
                 p.ProjectManagerId == userId || p.ProjectMembers.Any(m => m.UserId == userId));
-            return projects.Select(ProjectMapper.ToSummaryDto);
+            return projects.Select(project =>
+            {
+                var actualHours = project.HourEntries.Sum(entry => entry.TotalHours);
+                project.ActualHours = actualHours;
+                project.ProgressPercentage = CalculateProgressPercentage(actualHours, project.EstimatedHours);
+
+                return ProjectMapper.ToSummaryDto(project);
+            });
         }
 
         private static HourValues ResolveHours(CreateHourEntryDto dto)
@@ -593,6 +640,76 @@ namespace PMHUB.Application.Services.Implementation
 
             var percentage = Math.Round((actualHours / estimatedHours) * 100m, MidpointRounding.AwayFromZero);
             return (int)Math.Clamp(percentage, 0m, 100m);
+        }
+
+        private static BookingActivityNotificationDto BuildBookingActivityNotification(
+            HourEntry entry,
+            NormalUser user,
+            string activityTarget,
+            string eventType)
+        {
+            var occurredAtUtc = DateTime.UtcNow;
+            var verb = eventType switch
+            {
+                "created" => "booked",
+                "updated" => "updated",
+                "deleted" => "deleted",
+                _ => eventType
+            };
+
+            var bookingType = entry.IsPremium ? "Premium" : "Normal";
+            var userFullName = $"{user.FirstName} {user.LastName}".Trim();
+            if (string.IsNullOrWhiteSpace(userFullName))
+            {
+                userFullName = user.Email;
+            }
+
+            return new BookingActivityNotificationDto
+            {
+                Id = $"BookingActivity:{eventType}:{entry.Id}:{occurredAtUtc:yyyyMMddHHmmssfff}",
+                EventType = eventType,
+                HourEntryId = entry.Id,
+                UserId = entry.UserId,
+                UserFullName = userFullName,
+                UserEmail = user.Email,
+                ProjectId = entry.ProjectId,
+                ActivityTarget = activityTarget,
+                Category = entry.Category,
+                AllocationType = entry.AllocationType,
+                BookingType = bookingType,
+                BookingDate = entry.Date,
+                OccurredAtUtc = occurredAtUtc,
+                TotalHours = entry.TotalHours,
+                ExecutionHours = entry.ExecutionHours,
+                SupervisionHours = entry.SupervisionHours,
+                ProcessHours = entry.ProcessHours,
+                ManagementHours = entry.ManagementHours,
+                RAndDHours = entry.RAndDHours,
+                WorkshopHours = entry.WorkshopHours,
+                OtherHours = entry.OtherHours,
+                InternManagementHours = entry.InternManagementHours,
+                Notes = entry.Notes,
+                Message = $"{userFullName} {verb} {entry.TotalHours:0.##}h on {activityTarget} for {entry.Date:yyyy-MM-dd} ({bookingType}, {entry.AllocationType}).",
+                ActionUrl = $"/users/{entry.UserId}?tab=hours&date={entry.Date:yyyy-MM-dd}"
+            };
+        }
+
+        private async Task PublishBookingActivityAsync(
+            BookingActivityNotificationDto notification,
+            string eventType)
+        {
+            try
+            {
+                await _bookingActivityNotificationPublisher.PublishAsync(notification);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to publish realtime booking activity notification for HourEntry {HourEntryId} ({EventType})",
+                    notification.HourEntryId,
+                    eventType);
+            }
         }
     }
 }

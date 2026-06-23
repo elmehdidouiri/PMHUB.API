@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
 using PMHUB.Application.IServices;
+using PMHUB.Shared.Helpers;
 using System.Security.Claims;
 
 namespace PMHUB.API.Controllers
@@ -94,13 +95,14 @@ namespace PMHUB.API.Controllers
           [HttpGet("{id:guid}/period-statistics")]
         public async Task<ActionResult<ApiResponse<InternPeriodStatisticsDto>>> GetInternPeriodStatistics(
             Guid id,
-            [FromQuery] int year,
+            [FromQuery] int? year = null,
             [FromQuery] int? month = null)
         {
             if (month.HasValue && (month < 1 || month > 12))
                 return BadRequest(ApiResponse.Fail("Month must be between 1 and 12."));
 
-            var result = await _statisticsService.GetInternPeriodStatisticsAsync(id, year, month);
+            var resolvedYear = CompanyYearHelper.ResolveCompanyYear(year);
+            var result = await _statisticsService.GetInternPeriodStatisticsAsync(id, resolvedYear, month);
             return Ok(ApiResponse<InternPeriodStatisticsDto>.Ok(result));
         }
 

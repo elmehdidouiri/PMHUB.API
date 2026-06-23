@@ -24,6 +24,9 @@ wwwroot/uploads/*
 appsettings.json
 appsettings.*.json
 !appsettings.Example.json
+.env
+.env.*
+!.env.example
 
 # OS
 .DS_Store
