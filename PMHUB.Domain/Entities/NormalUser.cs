@@ -1,5 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PMHUB.Domain.Enums;
 
 namespace PMHUB.Domain.Entities
 {
@@ -7,6 +8,8 @@ namespace PMHUB.Domain.Entities
     {
         public bool IsActive { get; set; } = true;
         public bool IsApproved { get; set; } = false;
+
+        public MemberType MemberType { get; set; } = MemberType.Employee;
 
         public Guid? RoleId { get; set; }
         [ForeignKey("RoleId")]

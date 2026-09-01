@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PMHUB.Application.DTOs;
 using PMHUB.Application.Exceptions;
@@ -69,6 +69,18 @@ namespace PMHUB.API.Controllers
             dto.Id = id;
             await _userService.UpdateUserAsync(dto);
             return Ok(ApiResponse.Ok("Utilisateur mis à jour avec succès."));
+        }
+
+        // PUT api/users/{id}/member-type
+        [HttpPut("{id:guid}/member-type")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse>> UpdateMemberType(Guid id, [FromBody] UpdateMemberTypeDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            await _userService.UpdateMemberTypeAsync(id, dto);
+            return Ok(ApiResponse.Ok("MemberType mis à jour avec succès."));
         }
 
         // PUT api/users/me/password

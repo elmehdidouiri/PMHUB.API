@@ -4,6 +4,9 @@ namespace PMHUB.Application.DTOs
     {
         public DashboardAdminSummaryDto Summary { get; set; } = new();
         public DashboardBiChartsDto Charts { get; set; } = new();
+        public List<DashboardCreatedProjectDto> CreatedProjects { get; set; } = new();
+        public bool HasMoreCreatedProjects { get; set; }
+        public bool IsCreatedProjectsPeriodSelected { get; set; }
     }
 
     public class DashboardBiFiltersDto

@@ -21,8 +21,11 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 ["OTD"] = 85m,
                 ["Effectiveness"] = 85m,
                 ["CSA"] = 85m,
-                ["MonthlyWorkingHours"] = 161.5m
+                ["MonthlyWorkingHours"] = 182.75m,
+                ["TAH"] = 171.9m
             };
+
+        private const decimal DefaultTahMonthlyHoursTarget = 171.9m;
 
         private readonly PMHubDbContext _context;
         private readonly ITargetSettingsService _targetSettingsService;
@@ -74,7 +77,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var selectedHoursQuery = BuildHoursQuery(projectIds, query.UserId, startDate, endDate);
 
             var selectedHours = await selectedHoursQuery.ToListAsync();
-            var selectedKpis = await BuildKpiQuery(projectIds, endDate).ToListAsync();
+            var selectedKpis = await BuildKpiQuery(projectIds).ToListAsync();
 
             var totalProjects = await projectsQuery.CountAsync();
             var activeTeamMembers = selectedHours.Select(h => h.UserId).Distinct().Count();
@@ -128,7 +131,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 Summary = new AnalyticsSummaryDto
                 {
                     AverageEffectiveness = CalculateEffectiveness(periodProjectMetrics, periodKpis),
-                    AverageOtd = CalculateOtd(periodProjectMetrics, periodKpis, endDate),
+                    AverageOtd = CalculateOtd(periodProjectMetrics, periodKpis),
+                    OtdDiagnostics = CalculateOtdDiagnostics(periodProjectMetrics, periodKpis),
                     AverageCsat = CalculateNamedKpiAverage(periodKpis, "CSA"),
                     TotalProjects = totalProjects,
                     ProjectsWithData = projectsWithData,
@@ -283,12 +287,12 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             return query;
         }
 
-        private IQueryable<KPI> BuildKpiQuery(IEnumerable<Guid> projectIds, DateTime endDate)
+        private IQueryable<KPI> BuildKpiQuery(IEnumerable<Guid> projectIds)
         {
             var ids = projectIds.ToList();
             return _context.KPIs
                 .AsNoTracking()
-                .Where(k => ids.Contains(k.ProjectId) && k.CreatedAt <= endDate);
+                .Where(k => ids.Contains(k.ProjectId));
         }
 
         private AnalyticsPeriodDto ResolvePeriod(AnalyticsQueryDto query)
@@ -390,12 +394,6 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             return monthlyPeriods
                 .Select(period =>
                 {
-                    var kpisUpToMonth = kpis
-                        .Where(k => k.CreatedAt <= period.End)
-                        .ToList();
-                    var kpisCreatedInMonth = kpisUpToMonth
-                        .Where(k => k.CreatedAt >= period.Start)
-                        .ToList();
                     var activeProjectIds = projects
                         .Where(p => IsProjectInPeriod(p, period.Start, period.End))
                         .Select(p => p.Id);
@@ -403,11 +401,10 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                         .Where(h => h.Date >= period.Start && h.Date <= period.End)
                         .Where(h => h.ProjectId.HasValue)
                         .Select(h => h.ProjectId!.Value)
-                        .Concat(kpisCreatedInMonth.Select(k => k.ProjectId))
                         .Concat(activeProjectIds)
                         .Distinct()
                         .ToList();
-                    var monthKpis = kpisUpToMonth
+                    var monthKpis = kpis
                         .Where(k => monthProjectIds.Contains(k.ProjectId))
                         .ToList();
 
@@ -417,7 +414,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                         Month = period.Start.Month,
                         MonthName = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(period.Start.Month),
                         Effectiveness = CalculateEffectiveness(projects.Where(p => monthProjectIds.Contains(p.Id)).ToList(), monthKpis),
-                        Otd = CalculateOtd(projects.Where(p => monthProjectIds.Contains(p.Id)).ToList(), monthKpis, period.End),
+                        Otd = CalculateOtd(projects.Where(p => monthProjectIds.Contains(p.Id)).ToList(), monthKpis),
                         Csat = CalculateNamedKpiAverage(monthKpis, "CSA"),
                         ProjectsWithData = monthProjectIds.Count
                     };
@@ -436,12 +433,18 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 .Where(p => IsProjectInPeriod(p, startDate, endDate))
                 .Select(p => p.Id)
                 .Concat(hours.Where(h => h.ProjectId.HasValue).Select(h => h.ProjectId!.Value))
-                .Concat(kpis.Where(k => k.CreatedAt >= startDate && k.CreatedAt <= endDate).Select(k => k.ProjectId))
                 .ToHashSet();
         }
 
         private static bool IsProjectInPeriod(ProjectMetricRow project, DateTime startDate, DateTime endDate)
         {
+            if (project.Status == ProjectStatus.Done)
+            {
+                return project.EndDate.HasValue &&
+                    project.EndDate.Value >= startDate &&
+                    project.EndDate.Value <= endDate;
+            }
+
             return project.StartDate <= endDate &&
                 (!project.EndDate.HasValue || project.EndDate.Value >= startDate);
         }
@@ -579,30 +582,95 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             return values.Count == 0 ? null : Math.Round(values.Average(), 2);
         }
 
-        private static decimal CalculateOtd(List<ProjectMetricRow> projects, List<KPI> kpis, DateTime referenceDate)
+        private static decimal CalculateOtd(List<ProjectMetricRow> projects, List<KPI> kpis)
         {
-            var kpiAverage = TryCalculateNamedKpiAverage(kpis, "OTD");
-            if (kpiAverage.HasValue)
-                return kpiAverage.Value;
+            var projectsById = projects.ToDictionary(p => p.Id);
+            var kpiScores = kpis
+                .Where(k => IsMatchingKpiName(k.Name, "OTD"))
+                .Select(k => CalculateOtdKpiScore(k, projectsById))
+                .Where(score => score.HasValue)
+                .Select(score => score!.Value)
+                .ToList();
+
+            // When OTD KPIs exist, their manual value (or their date calculation) is the source of truth.
+            if (kpiScores.Count > 0)
+                return Math.Round(kpiScores.Average(), 2);
 
             var completedProjects = projects
-                .Where(p => p.EstimatedDueDate.HasValue)
+                .Where(p => p.Status == ProjectStatus.Done && p.EstimatedDueDate.HasValue && p.EndDate.HasValue)
                 .ToList();
 
             if (completedProjects.Count == 0)
                 return 0m;
 
             var completedOnTime = completedProjects.Count(p =>
-                p.Status == ProjectStatus.Done
-                    ? p.EndDate.HasValue && p.EndDate.Value <= p.EstimatedDueDate!.Value
-                    : p.EstimatedDueDate!.Value >= referenceDate);
+                p.EndDate!.Value.Date <= p.EstimatedDueDate!.Value.Date);
 
             return Math.Round(completedOnTime * 100m / completedProjects.Count, 2);
         }
 
+        private static decimal? CalculateOtdKpiScore(KPI kpi, IReadOnlyDictionary<Guid, ProjectMetricRow> projectsById)
+        {
+            // CurrentValue is the manually entered KPI value and is intentionally evaluated first.
+            if (kpi.IsManualValue || kpi.CurrentValue > 0)
+                return NormalizePercentage(kpi.CurrentValue);
+
+            projectsById.TryGetValue(kpi.ProjectId, out var project);
+            var dueDate = kpi.EstimatedDueDate ?? project?.EstimatedDueDate;
+            var endDate = kpi.ActualEndDate ?? project?.EndDate;
+
+            if (!dueDate.HasValue || !endDate.HasValue)
+                return null;
+
+            if (endDate.Value.Date <= dueDate.Value.Date)
+                return 100m;
+
+            if (project is null || endDate.Value <= project.StartDate)
+                return null;
+
+            var plannedDuration = dueDate.Value - project.StartDate;
+            var actualDuration = endDate.Value - project.StartDate;
+            if (plannedDuration <= TimeSpan.Zero || actualDuration <= TimeSpan.Zero)
+                return null;
+
+            return Math.Round(Math.Min(100m, (decimal)(plannedDuration.TotalDays / actualDuration.TotalDays) * 100m), 2);
+        }
+
+        private static AnalyticsOtdDiagnosticsDto CalculateOtdDiagnostics(
+            List<ProjectMetricRow> projects,
+            List<KPI> kpis)
+        {
+            var completedProjects = projects
+                .Where(p => p.Status == ProjectStatus.Done)
+                .ToList();
+            var eligibleProjects = completedProjects
+                .Where(p => p.EstimatedDueDate.HasValue && p.EndDate.HasValue)
+                .ToList();
+            var manualOtdKpis = kpis
+                .Count(k => IsMatchingKpiName(k.Name, "OTD") && (k.IsManualValue || k.CurrentValue > 0));
+            var projectsById = projects.ToDictionary(p => p.Id);
+            var calculatedOtdKpis = kpis
+                .Where(k => IsMatchingKpiName(k.Name, "OTD") && !k.IsManualValue && k.CurrentValue <= 0)
+                .Count(k => CalculateOtdKpiScore(k, projectsById).HasValue);
+
+            return new AnalyticsOtdDiagnosticsDto
+            {
+                CompletedProjectsWithOtdDates = eligibleProjects.Count,
+                CompletedOnTimeProjects = eligibleProjects.Count(p =>
+                    p.EndDate!.Value.Date <= p.EstimatedDueDate!.Value.Date),
+                CompletedLateProjects = eligibleProjects.Count(p =>
+                    p.EndDate!.Value.Date > p.EstimatedDueDate!.Value.Date),
+                ProjectsExcludedForMissingOtdDates = completedProjects.Count(p =>
+                    !p.EstimatedDueDate.HasValue || !p.EndDate.HasValue),
+                IncompleteProjectsExcludedFromOtd = projects.Count(p => p.Status != ProjectStatus.Done),
+                ManualOtdKpis = manualOtdKpis,
+                CalculatedOtdKpis = calculatedOtdKpis
+            };
+        }
+
         private static decimal? CalculateKpiScore(KPI kpi, string name)
         {
-            var rawValue = kpi.CalculatedValue ?? (kpi.CurrentValue > 0 ? kpi.CurrentValue : null);
+            var rawValue = kpi.CalculatedValue ?? (kpi.IsManualValue || kpi.CurrentValue > 0 ? kpi.CurrentValue : null);
             if (!rawValue.HasValue)
                 return null;
 
@@ -714,6 +782,611 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             public decimal ActualHours { get; set; }
             public DateTime? EndDate { get; set; }
             public DateTime? EstimatedDueDate { get; set; }
+        }
+
+        public async Task<CapacityPriceDashboardDto> GetCapacityPriceDashboardAsync(CapacityPriceQueryDto query)
+        {
+            await LoadTargetSettingsAsync();
+
+            var year = query.Year > 0 ? query.Year : DateTime.UtcNow.Year;
+            var month = query.Month > 0 ? query.Month : DateTime.UtcNow.Month;
+
+            if (month is < 1 or > 12)
+                throw new ArgumentOutOfRangeException(nameof(query.Month), "Month must be between 1 and 12.");
+
+            if (query.TargetHoursPerMember < 0)
+                throw new ArgumentOutOfRangeException(nameof(query.TargetHoursPerMember), "Target hours per member cannot be negative.");
+
+            if (query.HourlyRate < 0)
+                throw new ArgumentOutOfRangeException(nameof(query.HourlyRate), "Hourly rate cannot be negative.");
+
+            var targetHoursPerMember = query.TargetHoursPerMember is > 0
+                ? query.TargetHoursPerMember.Value
+                : _standards.MonthlyHoursTarget;
+
+            var startDate = new DateTime(year, month, 1);
+            var endDate = startDate.AddMonths(1).AddTicks(-1);
+
+            // The target is based on every active normal user, excluding interns.
+            // Interns can be identified either by their member type or by their role.
+            var activeMembers = await _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive &&
+                            u.MemberType != MemberType.intern &&
+                            (u.Role == null || u.Role.Name != "Intern"))
+                .Select(u => new 
+                { 
+                    u.Id, 
+                    u.FirstName, 
+                    u.LastName 
+                })
+                .ToListAsync();
+
+            var activeMemberIds = activeMembers.Select(u => u.Id).ToList();
+
+            var hoursDataDict = new Dictionary<Guid, decimal>();
+            if (activeMemberIds.Count > 0)
+            {
+                var queryResult = await _context.HourEntries
+                    .AsNoTracking()
+                    .Where(h => h.Date >= startDate && h.Date <= endDate && activeMemberIds.Contains(h.UserId))
+                    .GroupBy(h => h.UserId)
+                    .Select(g => new
+                    {
+                        UserId = g.Key,
+                        TotalBooked = g.Sum(x => x.TotalHours)
+                    })
+                    .ToListAsync();
+                    
+                foreach (var item in queryResult)
+                {
+                    hoursDataDict[item.UserId] = item.TotalBooked;
+                }
+            }
+
+            var activeUsersCount = activeMembers.Count;
+            
+            var totalTargetHours = targetHoursPerMember * activeUsersCount;
+            var totalBookedHours = hoursDataDict.Values.Sum();
+
+            var memberCapacities = activeMembers.Select(emp =>
+            {
+                decimal booked = hoursDataDict.TryGetValue(emp.Id, out var value) ? value : 0m;
+                return new MemberCapacityDto
+                {
+                    UserId = emp.Id,
+                    UserName = (emp.FirstName + " " + emp.LastName).Trim(),
+                    BookedHours = Math.Round(booked, 2),
+                    Percentage = targetHoursPerMember > 0
+                        ? Math.Round((booked / targetHoursPerMember) * 100m, 2)
+                        : 0m
+                };
+            }).OrderByDescending(x => x.BookedHours).ToList();
+
+            var capacityTarget = new CapacityTargetDto
+            {
+                ActualBookedHours = Math.Round(totalBookedHours, 2),
+                TargetHours = Math.Round(totalTargetHours, 2),
+                RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2)
+            };
+
+            var totalPriceTarget = totalTargetHours * query.HourlyRate;
+            var totalBookedPrice = totalBookedHours * query.HourlyRate;
+
+            var memberPrices = activeMembers.Select(emp =>
+            {
+                decimal booked = hoursDataDict.TryGetValue(emp.Id, out var value) ? value : 0m;
+                decimal bookedPrice = booked * query.HourlyRate;
+                return new MemberPriceDto
+                {
+                    UserId = emp.Id,
+                    UserName = (emp.FirstName + " " + emp.LastName).Trim(),
+                    BookedPrice = Math.Round(bookedPrice, 2),
+                    Percentage = totalPriceTarget > 0
+                        ? Math.Round((bookedPrice / (targetHoursPerMember * query.HourlyRate)) * 100m, 2)
+                        : 0m
+                };
+            }).OrderByDescending(x => x.BookedPrice).ToList();
+
+            var priceTarget = new PriceTargetDto
+            {
+                BookedPrice = Math.Round(totalBookedPrice, 2),
+                TargetPrice = Math.Round(totalPriceTarget, 2),
+                RemainingPrice = Math.Round(Math.Max(0, totalPriceTarget - totalBookedPrice), 2)
+            };
+
+            return new CapacityPriceDashboardDto
+            {
+                MemberCapacities = memberCapacities,
+                CapacityTarget = capacityTarget,
+                MemberPrices = memberPrices,
+                PriceTarget = priceTarget
+            };
+        }
+
+        public async Task<InternCapacityPriceDashboardDto> GetInternCapacityPriceDashboardAsync(InternCapacityPriceQueryDto query)
+        {
+            await LoadTargetSettingsAsync();
+
+            var year = query.Year > 0 ? query.Year : DateTime.UtcNow.Year;
+            var month = query.Month > 0 ? query.Month : DateTime.UtcNow.Month;
+
+            if (month is < 1 or > 12)
+                throw new ArgumentOutOfRangeException(nameof(query.Month), "Month must be between 1 and 12.");
+            if (query.TargetHoursPerIntern < 0)
+                throw new ArgumentOutOfRangeException(nameof(query.TargetHoursPerIntern), "Target hours per intern cannot be negative.");
+            if (query.HourlyRate < 0)
+                throw new ArgumentOutOfRangeException(nameof(query.HourlyRate), "Hourly rate cannot be negative.");
+
+            var targetHoursPerIntern = query.TargetHoursPerIntern is > 0
+                ? query.TargetHoursPerIntern.Value
+                : _standards.MonthlyHoursTarget;
+
+            var startDate = new DateTime(year, month, 1);
+            var endDate = startDate.AddMonths(1).AddTicks(-1);
+
+            var interns = await _context.Interns
+                .AsNoTracking()
+                .Select(i => new
+                {
+                    i.Id,
+                    i.Name,
+                    RoleName = i.Role.Name,
+                    i.SupervisorId,
+                    SupervisorName = i.Supervisor.FirstName + " " + i.Supervisor.LastName
+                })
+                .OrderBy(i => i.Name)
+                .ToListAsync();
+
+            // Interns who have a platform account log their work in HourEntries.
+            // This is the same population excluded from the normal-user capacity endpoint.
+            var accountInterns = await _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive &&
+                    (u.MemberType == MemberType.intern || (u.Role != null && u.Role.Name == "Intern")))
+                .Select(u => new
+                {
+                    u.Id,
+                    Name = u.FirstName + " " + u.LastName,
+                    RoleName = u.Role != null ? u.Role.Name : string.Empty
+                })
+                .OrderBy(i => i.Name)
+                .ToListAsync();
+
+            var accountInternIds = accountInterns.Select(i => i.Id).ToList();
+            var accountInternMetrics = await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => accountInternIds.Contains(h.UserId) && h.Date >= startDate && h.Date <= endDate)
+                .GroupBy(h => h.UserId)
+                .Select(g => new
+                {
+                    InternId = g.Key,
+                    BookedHours = g.Sum(h => h.TotalHours),
+                    HourEntryCount = g.Count()
+                })
+                .ToListAsync();
+
+            var accountInternProjects = await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => accountInternIds.Contains(h.UserId) && h.ProjectId.HasValue && h.Date >= startDate && h.Date <= endDate)
+                .GroupBy(h => new { ProjectId = h.ProjectId!.Value, h.Project!.Name })
+                .Select(g => new
+                {
+                    g.Key.ProjectId,
+                    ProjectName = g.Key.Name,
+                    BookedHours = g.Sum(h => h.TotalHours),
+                    HourEntryCount = g.Count()
+                })
+                .ToListAsync();
+
+            // Direct entries are created from the intern allocation screen.
+            var directInternMetrics = await _context.InternHourEntries
+                .AsNoTracking()
+                .Where(e => e.Date >= startDate && e.Date <= endDate)
+                .GroupBy(e => e.InternAllocation.InternId)
+                .Select(g => new
+                {
+                    InternId = g.Key,
+                    BookedHours = g.Sum(e => e.Hours),
+                    HourEntryCount = g.Count()
+                })
+                .ToListAsync();
+
+            // Supervisor bookings are stored separately on the normal user's HourEntry.
+            // They must be included because this is the source used by the regular booking form.
+            var supervisionMetrics = await _context.HourEntryInternSupervisions
+                .AsNoTracking()
+                .Where(s => s.HourEntry.Date >= startDate && s.HourEntry.Date <= endDate)
+                .GroupBy(s => s.InternAllocation.InternId)
+                .Select(g => new
+                {
+                    InternId = g.Key,
+                    BookedHours = g.Sum(s => s.Hours),
+                    HourEntryCount = g.Count()
+                })
+                .ToListAsync();
+
+            var directProjects = await _context.InternHourEntries
+                .AsNoTracking()
+                .Where(e => e.Date >= startDate && e.Date <= endDate)
+                .GroupBy(e => new { e.InternAllocation.ProjectId, e.InternAllocation.Project.Name })
+                .Select(g => new
+                {
+                    g.Key.ProjectId,
+                    ProjectName = g.Key.Name,
+                    BookedHours = g.Sum(e => e.Hours),
+                    InternCount = g.Select(e => e.InternAllocation.InternId).Distinct().Count(),
+                    HourEntryCount = g.Count()
+                })
+                .OrderByDescending(p => p.BookedHours)
+                .ToListAsync();
+
+            var supervisionProjects = await _context.HourEntryInternSupervisions
+                .AsNoTracking()
+                .Where(s => s.HourEntry.Date >= startDate && s.HourEntry.Date <= endDate)
+                .GroupBy(s => new { s.InternAllocation.ProjectId, s.InternAllocation.Project.Name })
+                .Select(g => new
+                {
+                    g.Key.ProjectId,
+                    ProjectName = g.Key.Name,
+                    BookedHours = g.Sum(s => s.Hours),
+                    InternCount = g.Select(s => s.InternAllocation.InternId).Distinct().Count(),
+                    HourEntryCount = g.Count()
+                })
+                .ToListAsync();
+
+            var projectInternPairs = await _context.InternHourEntries
+                .AsNoTracking()
+                .Where(e => e.Date >= startDate && e.Date <= endDate)
+                .Select(e => new { e.InternAllocation.ProjectId, e.InternAllocation.InternId })
+                .Concat(_context.HourEntryInternSupervisions
+                    .AsNoTracking()
+                    .Where(s => s.HourEntry.Date >= startDate && s.HourEntry.Date <= endDate)
+                    .Select(s => new { s.InternAllocation.ProjectId, s.InternAllocation.InternId }))
+                .Concat(_context.HourEntries
+                    .AsNoTracking()
+                    .Where(h => accountInternIds.Contains(h.UserId) && h.ProjectId.HasValue && h.Date >= startDate && h.Date <= endDate)
+                    .Select(h => new { ProjectId = h.ProjectId!.Value, InternId = h.UserId }))
+                .Distinct()
+                .ToListAsync();
+
+            var directMetricsByIntern = directInternMetrics.ToDictionary(x => x.InternId);
+            var supervisionMetricsByIntern = supervisionMetrics.ToDictionary(x => x.InternId);
+            var accountMetricsByIntern = accountInternMetrics.ToDictionary(x => x.InternId);
+            var internCountByProject = projectInternPairs
+                .GroupBy(pair => pair.ProjectId)
+                .ToDictionary(group => group.Key, group => group.Count());
+            var totalDirectHours = directInternMetrics.Sum(x => x.BookedHours);
+            var totalSupervisionHours = supervisionMetrics.Sum(x => x.BookedHours);
+            var totalAccountInternHours = accountInternMetrics.Sum(x => x.BookedHours);
+            var totalBookedHours = totalDirectHours + totalSupervisionHours + totalAccountInternHours;
+            var totalInternCount = interns.Count + accountInterns.Count;
+            var totalTargetHours = totalInternCount * targetHoursPerIntern;
+            var totalBookedPrice = totalBookedHours * query.HourlyRate;
+            var totalTargetPrice = totalTargetHours * query.HourlyRate;
+
+            return new InternCapacityPriceDashboardDto
+            {
+                TotalInterns = totalInternCount,
+                InternsWithLoggedHours = interns.Count(i =>
+                    directMetricsByIntern.ContainsKey(i.Id) || supervisionMetricsByIntern.ContainsKey(i.Id)) +
+                    accountInterns.Count(i => accountMetricsByIntern.ContainsKey(i.Id)),
+                CapacityTarget = new CapacityTargetDto
+                {
+                    ActualBookedHours = Math.Round(totalBookedHours, 2),
+                    TargetHours = Math.Round(totalTargetHours, 2),
+                    RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2)
+                },
+                PriceTarget = new PriceTargetDto
+                {
+                    BookedPrice = Math.Round(totalBookedPrice, 2),
+                    TargetPrice = Math.Round(totalTargetPrice, 2),
+                    RemainingPrice = Math.Round(Math.Max(0m, totalTargetPrice - totalBookedPrice), 2)
+                },
+                Interns = interns.Select(intern =>
+                {
+                    var directMetric = directMetricsByIntern.GetValueOrDefault(intern.Id);
+                    var supervisionMetric = supervisionMetricsByIntern.GetValueOrDefault(intern.Id);
+                    var directHours = directMetric?.BookedHours ?? 0m;
+                    var supervisionHours = supervisionMetric?.BookedHours ?? 0m;
+                    var bookedHours = directHours + supervisionHours;
+                    var bookedPrice = bookedHours * query.HourlyRate;
+                    var targetPrice = targetHoursPerIntern * query.HourlyRate;
+
+                    return new InternCapacityPriceDto
+                    {
+                        InternId = intern.Id,
+                        InternName = intern.Name,
+                        Source = "InternAllocation",
+                        RoleName = intern.RoleName,
+                        SupervisorId = intern.SupervisorId,
+                        SupervisorName = intern.SupervisorName.Trim(),
+                        DirectBookedHours = Math.Round(directHours, 2),
+                        SupervisionHours = Math.Round(supervisionHours, 2),
+                        BookedHours = Math.Round(bookedHours, 2),
+                        TargetHours = Math.Round(targetHoursPerIntern, 2),
+                        RemainingHours = Math.Round(Math.Max(0m, targetHoursPerIntern - bookedHours), 2),
+                        Percentage = targetHoursPerIntern > 0
+                            ? Math.Round(bookedHours / targetHoursPerIntern * 100m, 2)
+                            : 0m,
+                        BookedPrice = Math.Round(bookedPrice, 2),
+                        TargetPrice = Math.Round(targetPrice, 2),
+                        RemainingPrice = Math.Round(Math.Max(0m, targetPrice - bookedPrice), 2),
+                        HourEntryCount = (directMetric?.HourEntryCount ?? 0) + (supervisionMetric?.HourEntryCount ?? 0)
+                    };
+                })
+                    .Concat(accountInterns.Select(intern =>
+                    {
+                        var metric = accountMetricsByIntern.GetValueOrDefault(intern.Id);
+                        var bookedHours = metric?.BookedHours ?? 0m;
+                        var bookedPrice = bookedHours * query.HourlyRate;
+                        var targetPrice = targetHoursPerIntern * query.HourlyRate;
+
+                        return new InternCapacityPriceDto
+                        {
+                            InternId = intern.Id,
+                            InternName = intern.Name.Trim(),
+                            Source = "UserAccount",
+                            RoleName = intern.RoleName,
+                            BookedHours = Math.Round(bookedHours, 2),
+                            TargetHours = Math.Round(targetHoursPerIntern, 2),
+                            RemainingHours = Math.Round(Math.Max(0m, targetHoursPerIntern - bookedHours), 2),
+                            Percentage = targetHoursPerIntern > 0
+                                ? Math.Round(bookedHours / targetHoursPerIntern * 100m, 2)
+                                : 0m,
+                            BookedPrice = Math.Round(bookedPrice, 2),
+                            TargetPrice = Math.Round(targetPrice, 2),
+                            RemainingPrice = Math.Round(Math.Max(0m, targetPrice - bookedPrice), 2),
+                            HourEntryCount = metric?.HourEntryCount ?? 0
+                        };
+                    }))
+                    .OrderByDescending(i => i.BookedHours)
+                    .ToList(),
+                Projects = directProjects
+                    .Select(project => project.ProjectId)
+                    .Concat(supervisionProjects.Select(project => project.ProjectId))
+                    .Concat(accountInternProjects.Select(project => project.ProjectId))
+                    .Distinct()
+                    .Select(projectId =>
+                    {
+                        var directProject = directProjects.FirstOrDefault(project => project.ProjectId == projectId);
+                        var supervisionProject = supervisionProjects.FirstOrDefault(project => project.ProjectId == projectId);
+                        var accountProject = accountInternProjects.FirstOrDefault(project => project.ProjectId == projectId);
+                        var directHours = directProject?.BookedHours ?? 0m;
+                        var supervisionHours = supervisionProject?.BookedHours ?? 0m;
+                        var accountHours = accountProject?.BookedHours ?? 0m;
+                        var bookedHours = directHours + supervisionHours + accountHours;
+
+                        return new InternProjectCapacityPriceDto
+                        {
+                            ProjectId = projectId,
+                            ProjectName = directProject?.ProjectName ?? supervisionProject?.ProjectName ?? accountProject?.ProjectName ?? string.Empty,
+                            DirectBookedHours = Math.Round(directHours + accountHours, 2),
+                            SupervisionHours = Math.Round(supervisionHours, 2),
+                            BookedHours = Math.Round(bookedHours, 2),
+                            BookedPrice = Math.Round(bookedHours * query.HourlyRate, 2),
+                            // An intern present in both sources is counted only once.
+                            InternCount = internCountByProject.GetValueOrDefault(projectId),
+                            HourEntryCount = (directProject?.HourEntryCount ?? 0) + (supervisionProject?.HourEntryCount ?? 0) + (accountProject?.HourEntryCount ?? 0)
+                        };
+                    })
+                    .OrderByDescending(project => project.BookedHours)
+                    .ToList()
+            };
+        }
+
+        public async Task<MemberTahDashboardDto> GetMemberTahDashboardAsync(MemberTahQueryDto query)
+        {
+            if (query.TahMonthlyHoursTarget < 0)
+                throw new ArgumentOutOfRangeException(nameof(query.TahMonthlyHoursTarget), "TAH monthly hours target cannot be negative.");
+
+            await LoadTargetSettingsAsync();
+
+            var period = ResolvePeriod(query);
+            var startDate = period.StartDate.ToDateTime(TimeOnly.MinValue);
+            var endDate = period.EndDate.ToDateTime(TimeOnly.MaxValue);
+            var tahTarget = await ResolveTahMonthlyHoursTargetAsync(query.TahMonthlyHoursTarget);
+
+            var membersQuery = _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive &&
+                            (u.MemberType == MemberType.Employee || u.MemberType == MemberType.Subcontractor));
+
+            if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
+                membersQuery = membersQuery.Where(u => u.Id == query.UserId.Value);
+
+            var members = await membersQuery
+                .OrderBy(u => u.FirstName)
+                .ThenBy(u => u.LastName)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FirstName,
+                    u.LastName,
+                    u.MemberType
+                })
+                .ToListAsync();
+
+            var memberIds = members.Select(m => m.Id).ToList();
+            var projectsQuery = BuildProjectsQuery(query);
+            var projectIds = await projectsQuery.Select(p => p.Id).ToListAsync();
+            var selectedHours = memberIds.Count == 0
+                ? new List<HourEntry>()
+                : await BuildHoursQuery(projectIds, query.UserId, startDate, endDate)
+                    .Where(h => memberIds.Contains(h.UserId))
+                    .ToListAsync();
+            var selectedKpis = await BuildKpiQuery(projectIds).ToListAsync();
+            var projectMetricRows = await projectsQuery
+                .Select(p => new ProjectMetricRow
+                {
+                    Id = p.Id,
+                    Status = p.Status,
+                    StartDate = p.StartDate,
+                    EstimatedHours = p.EstimatedHours,
+                    ActualHours = p.ActualHours,
+                    EndDate = p.EndDate,
+                    EstimatedDueDate = p.EstimatedDueDate
+                })
+                .ToListAsync();
+
+            var periodProjectIds = ResolvePeriodProjectIds(projectMetricRows, selectedHours, selectedKpis, startDate, endDate);
+            var periodProjects = projectMetricRows.Where(p => periodProjectIds.Contains(p.Id)).ToList();
+            var periodKpis = selectedKpis.Where(k => periodProjectIds.Contains(k.ProjectId)).ToList();
+            var projectEffectiveness = periodProjects.ToDictionary(
+                p => p.Id,
+                p => CalculateEffectiveness(new List<ProjectMetricRow> { p }, selectedKpis.Where(k => k.ProjectId == p.Id).ToList()));
+
+            var monthlyPeriods = BuildMonthlyPeriods(startDate, endDate);
+            var companyMonthlyEffectiveness = BuildKpiTrend(projectMetricRows, selectedKpis, selectedHours, monthlyPeriods)
+                .ToDictionary(m => (m.Year, m.Month), m => m.Effectiveness);
+            var companyEffectiveness = CalculateEffectiveness(periodProjects, periodKpis);
+
+            var hoursByUserMonth = selectedHours
+                .Where(h => h.ProjectId.HasValue)
+                .GroupBy(h => (h.UserId, h.Date.Year, h.Date.Month))
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(h => (ProjectId: h.ProjectId!.Value, Hours: h.TotalHours)).ToList());
+
+            var memberDtos = members.Select(member =>
+            {
+                var monthly = monthlyPeriods.Select(monthPeriod =>
+                {
+                    var year = monthPeriod.Start.Year;
+                    var month = monthPeriod.Start.Month;
+                    var monthHours = hoursByUserMonth.GetValueOrDefault((member.Id, year, month))
+                        ?? new List<(Guid ProjectId, decimal Hours)>();
+                    var bookedHours = monthHours.Sum(h => h.Hours);
+                    var companyMonthEffectiveness = companyMonthlyEffectiveness.GetValueOrDefault((year, month));
+                    var effectiveness = CalculateHoursWeightedEffectiveness(monthHours, projectEffectiveness, companyMonthEffectiveness);
+                    return new MemberTahMemberMonthDto
+                    {
+                        Year = year,
+                        Month = month,
+                        MonthName = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month),
+                        BookedHours = Math.Round(bookedHours, 2),
+                        Effectiveness = effectiveness,
+                        TahHours = CalculateTahHours(tahTarget, effectiveness)
+                    };
+                }).ToList();
+
+                var periodHours = monthly.Sum(m => m.BookedHours);
+                var periodEffectiveness = monthly.Count == 0
+                    ? companyEffectiveness
+                    : CalculateHoursWeightedEffectiveness(
+                        monthly.Select(m => (Weight: m.BookedHours, Value: m.Effectiveness)),
+                        companyEffectiveness);
+
+                return new MemberTahMemberDto
+                {
+                    UserId = member.Id,
+                    UserName = (member.FirstName + " " + member.LastName).Trim(),
+                    MemberType = member.MemberType,
+                    MemberTypeLabel = member.MemberType == MemberType.Subcontractor ? "Subcontractor" : "TE",
+                    BookedHours = Math.Round(periodHours, 2),
+                    Effectiveness = periodEffectiveness,
+                    TahHours = Math.Round(monthly.Sum(m => m.TahHours), 1),
+                    Monthly = monthly
+                };
+            }).ToList();
+
+            var employees = memberDtos.Where(m => m.MemberType == MemberType.Employee).ToList();
+            var subcontractors = memberDtos.Where(m => m.MemberType == MemberType.Subcontractor).ToList();
+            var employeeTah = employees.Sum(m => m.TahHours);
+            var subcontractorTah = subcontractors.Sum(m => m.TahHours);
+            var cumulativeTah = employeeTah + subcontractorTah;
+
+            var monthlyBreakdown = monthlyPeriods.Select(monthPeriod =>
+            {
+                var year = monthPeriod.Start.Year;
+                var month = monthPeriod.Start.Month;
+                var employeeMonthTah = employees.Sum(m => m.Monthly.First(row => row.Year == year && row.Month == month).TahHours);
+                var subcontractorMonthTah = subcontractors.Sum(m => m.Monthly.First(row => row.Year == year && row.Month == month).TahHours);
+                var monthTah = employeeMonthTah + subcontractorMonthTah;
+                var monthEffectiveness = companyMonthlyEffectiveness.GetValueOrDefault((year, month));
+
+                return new MemberTahMonthlyBreakdownDto
+                {
+                    Year = year,
+                    Month = month,
+                    MonthName = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month),
+                    EmployeeCount = employees.Count,
+                    SubcontractorCount = subcontractors.Count,
+                    AverageEffectiveness = monthEffectiveness,
+                    TahHours = Math.Round(monthTah, 1),
+                    EmployeeTahHours = Math.Round(employeeMonthTah, 1),
+                    SubcontractorTahHours = Math.Round(subcontractorMonthTah, 1),
+                    EmployeeSharePercentage = CalculatePercentage(employeeMonthTah, monthTah),
+                    SubcontractorSharePercentage = CalculatePercentage(subcontractorMonthTah, monthTah)
+                };
+            }).ToList();
+
+            return new MemberTahDashboardDto
+            {
+                Period = period,
+                TahMonthlyHoursTarget = tahTarget,
+                Summary = new MemberTahSummaryDto
+                {
+                    EmployeeCount = employees.Count,
+                    SubcontractorCount = subcontractors.Count,
+                    AverageEffectiveness = companyEffectiveness,
+                    CumulativeTahHours = Math.Round(cumulativeTah, 1),
+                    EmployeeTahHours = Math.Round(employeeTah, 1),
+                    SubcontractorTahHours = Math.Round(subcontractorTah, 1),
+                    EmployeeSharePercentage = CalculatePercentage(employeeTah, cumulativeTah),
+                    SubcontractorSharePercentage = CalculatePercentage(subcontractorTah, cumulativeTah)
+                },
+                MonthlyBreakdown = monthlyBreakdown,
+                Members = memberDtos
+            };
+        }
+
+        private async Task<decimal> ResolveTahMonthlyHoursTargetAsync(decimal? overrideTarget)
+        {
+            if (overrideTarget is > 0)
+                return overrideTarget.Value;
+
+            var kpiTargets = await _targetSettingsService.GetActiveKpiTargetValuesAsync();
+            if (kpiTargets.TryGetValue("TAH", out var storedTarget) && storedTarget > 0)
+                return storedTarget;
+
+            return DefaultTahMonthlyHoursTarget;
+        }
+
+        private static decimal CalculateHoursWeightedEffectiveness(
+            IEnumerable<(Guid ProjectId, decimal Hours)> hours,
+            IReadOnlyDictionary<Guid, decimal> projectEffectiveness,
+            decimal fallbackEffectiveness)
+        {
+            var weighted = hours
+                .Where(h => h.Hours > 0 && projectEffectiveness.ContainsKey(h.ProjectId))
+                .Select(h => (Weight: h.Hours, Value: projectEffectiveness[h.ProjectId]))
+                .ToList();
+
+            return CalculateHoursWeightedEffectiveness(weighted, fallbackEffectiveness);
+        }
+
+        private static decimal CalculateHoursWeightedEffectiveness(
+            IEnumerable<(decimal Weight, decimal Value)> values,
+            decimal fallbackEffectiveness)
+        {
+            var rows = values.Where(v => v.Weight > 0 && v.Value > 0).ToList();
+            if (rows.Count == 0)
+                return fallbackEffectiveness;
+
+            var totalWeight = rows.Sum(v => v.Weight);
+            return totalWeight <= 0
+                ? fallbackEffectiveness
+                : Math.Round(rows.Sum(v => v.Weight * v.Value) / totalWeight, 2);
+        }
+
+        private static decimal CalculateTahHours(decimal monthlyHoursTarget, decimal effectiveness)
+        {
+            var ratio = effectiveness <= 1m ? effectiveness : effectiveness / 100m;
+            return Math.Round(monthlyHoursTarget * ratio, 1);
         }
     }
 }

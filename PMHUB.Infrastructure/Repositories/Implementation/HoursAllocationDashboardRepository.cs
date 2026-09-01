@@ -704,14 +704,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         private decimal CalculateAvailableHours(DateTime startDate, DateTime endDate)
         {
-            var workingDays = 0;
-            for (var date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
-            {
-                if (date.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
-                    workingDays++;
-            }
-
-            return workingDays * _standards.HoursPerDay;
+            return _standards.GetAvailableHours(startDate, endDate);
         }
 
         private static IEnumerable<DateTime> BuildMonthStarts(DateTime startDate, DateTime endDate)

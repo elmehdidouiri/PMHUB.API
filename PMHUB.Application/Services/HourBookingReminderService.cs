@@ -14,9 +14,6 @@ namespace PMHUB.Application.Services.Implementation
     {
         private readonly IUserRepository _userRepository;
         private readonly IHourEntryRepository _hourEntryRepository;
-        private readonly IRepository<Intern> _internRepository;
-        private readonly IRepository<InternAllocation> _internAllocationRepository;
-        private readonly IRepository<InternHourEntry> _internHourEntryRepository;
         private readonly IEmailService _emailService;
         private readonly HourBookingReminderSettings _settings;
         private readonly ITargetSettingsService _targetSettingsService;
@@ -25,9 +22,6 @@ namespace PMHUB.Application.Services.Implementation
         public HourBookingReminderService(
             IUserRepository userRepository,
             IHourEntryRepository hourEntryRepository,
-            IRepository<Intern> internRepository,
-            IRepository<InternAllocation> internAllocationRepository,
-            IRepository<InternHourEntry> internHourEntryRepository,
             IEmailService emailService,
             IOptions<HourBookingReminderSettings> settings,
             ITargetSettingsService targetSettingsService,
@@ -35,9 +29,6 @@ namespace PMHUB.Application.Services.Implementation
         {
             _userRepository = userRepository;
             _hourEntryRepository = hourEntryRepository;
-            _internRepository = internRepository;
-            _internAllocationRepository = internAllocationRepository;
-            _internHourEntryRepository = internHourEntryRepository;
             _emailService = emailService;
             _settings = settings.Value;
             _targetSettingsService = targetSettingsService;
@@ -53,7 +44,7 @@ namespace PMHUB.Application.Services.Implementation
             var weekStart = currentWeekStart.AddDays(-7);
             var weekEnd = currentWeekStart.AddDays(-1);
             var companyStandards = await _targetSettingsService.GetCompanyStandardsAsync();
-            var expectedWeeklyHours = companyStandards.HoursPerDay * 5m;
+            var expectedWeeklyHours = companyStandards.GetDailyHoursForMonth(today.Year, today.Month) * 5m;
 
             foreach (var user in users)
             {
@@ -123,9 +114,6 @@ namespace PMHUB.Application.Services.Implementation
                 });
             }
 
-            var internNotifications = await GetInternsWithoutRecentBookingsAsync(thresholdDate, thresholdDays, cancellationToken);
-            notifications.AddRange(internNotifications);
-
             return notifications
                 .OrderByDescending(n => n.DaysWithoutBooking)
                 .ThenBy(n => n.LastName)
@@ -191,8 +179,7 @@ namespace PMHUB.Application.Services.Implementation
             var user = await _userRepository.GetNormalUserByIdAsync(userId);
             if (user is null)
             {
-                await SendInternSupervisorReminderAsync(userId, cancellationToken);
-                return;
+                throw new NotFoundException("User", userId);
             }
 
             if (IsInternRole(user.Role?.Name))
@@ -210,120 +197,6 @@ namespace PMHUB.Application.Services.Implementation
             }
 
             await _emailService.SendSupervisorVisitReminderAsync(user.Email, user.FirstName);
-        }
-
-        private async Task<IEnumerable<AdminHourBookingNotificationDto>> GetInternsWithoutRecentBookingsAsync(
-            DateTime thresholdDate,
-            int thresholdDays,
-            CancellationToken cancellationToken)
-        {
-            var interns = (await _internRepository.GetAllAsync()).ToList();
-            if (!interns.Any())
-            {
-                return Enumerable.Empty<AdminHourBookingNotificationDto>();
-            }
-
-            var allocations = (await _internAllocationRepository.GetAllAsync()).ToList();
-            var allocationById = allocations.ToDictionary(a => a.Id);
-            var allocationIdsByIntern = allocations
-                .GroupBy(a => a.InternId)
-                .ToDictionary(g => g.Key, g => g.Select(a => a.Id).ToHashSet());
-
-            var recentEntries = await _internHourEntryRepository.FindAsync(e => e.Date >= thresholdDate);
-            var internIdsWithRecentEntries = recentEntries
-                .Where(e => allocationById.ContainsKey(e.InternAllocationId))
-                .Select(e => allocationById[e.InternAllocationId].InternId)
-                .ToHashSet();
-
-            var allEntries = (await _internHourEntryRepository.GetAllAsync()).ToList();
-            var lastBookingByIntern = allEntries
-                .Where(e => allocationById.ContainsKey(e.InternAllocationId))
-                .GroupBy(e => allocationById[e.InternAllocationId].InternId)
-                .ToDictionary(g => g.Key, g => (DateTime?)g.Max(e => e.Date));
-
-            var supervisorIds = interns.Select(i => i.SupervisorId).Distinct().ToList();
-            var supervisors = (await _userRepository.FindAsync(u => supervisorIds.Contains(u.Id)))
-                .OfType<NormalUser>()
-                .ToDictionary(u => u.Id);
-
-            var notifications = new List<AdminHourBookingNotificationDto>();
-
-            foreach (var intern in interns.Where(i => !internIdsWithRecentEntries.Contains(i.Id)))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (!allocationIdsByIntern.ContainsKey(intern.Id) ||
-                    !supervisors.TryGetValue(intern.SupervisorId, out var supervisor))
-                {
-                    continue;
-                }
-
-                var lastBookingDate = lastBookingByIntern.GetValueOrDefault(intern.Id);
-                var daysWithoutBooking = lastBookingDate.HasValue
-                    ? (DateTime.UtcNow.Date - lastBookingDate.Value.Date).Days
-                    : (DateTime.UtcNow.Date - intern.CreatedAt.Date).Days;
-                var supervisorName = $"{supervisor.FirstName} {supervisor.LastName}".Trim();
-
-                notifications.Add(new AdminHourBookingNotificationDto
-                {
-                    UserId = intern.Id,
-                    TargetType = "Intern",
-                    FirstName = intern.Name,
-                    Email = supervisor.Email,
-                    SupervisorId = supervisor.Id,
-                    SupervisorName = supervisorName,
-                    SupervisorEmail = supervisor.Email,
-                    LastBookingDate = lastBookingDate,
-                    DaysWithoutBooking = Math.Max(daysWithoutBooking, thresholdDays),
-                    Message = $"{intern.Name} has no booked intern hours for at least {thresholdDays} days. Reminder will be sent to supervisor {supervisorName}."
-                });
-            }
-
-            return notifications;
-        }
-
-        private async Task SendInternSupervisorReminderAsync(Guid internId, CancellationToken cancellationToken)
-        {
-            var intern = await _internRepository.GetByIdAsync(internId)
-                ?? throw new NotFoundException("User or Intern", internId);
-
-            var thresholdDays = Math.Max(_settings.NoBookingThresholdDays, 1);
-            var thresholdDate = DateTime.UtcNow.Date.AddDays(-thresholdDays);
-            var allocations = (await _internAllocationRepository.FindAsync(a => a.InternId == intern.Id)).ToList();
-            var allocationIds = allocations.Select(a => a.Id).ToHashSet();
-
-            if (!allocationIds.Any())
-            {
-                throw new BadRequestException("This intern has no project allocation.");
-            }
-
-            var recentEntries = await _internHourEntryRepository.FindAsync(e =>
-                allocationIds.Contains(e.InternAllocationId) && e.Date >= thresholdDate);
-
-            if (recentEntries.Any())
-            {
-                throw new BadRequestException("This intern already has booked hours recently.");
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var supervisor = await _userRepository.GetNormalUserByIdAsync(intern.SupervisorId)
-                ?? throw new NotFoundException("Supervisor", intern.SupervisorId);
-
-            var allEntries = await _internHourEntryRepository.FindAsync(e => allocationIds.Contains(e.InternAllocationId));
-            var lastBookingDate = allEntries
-                .OrderByDescending(e => e.Date)
-                .Select(e => (DateTime?)e.Date)
-                .FirstOrDefault();
-            var daysWithoutBooking = lastBookingDate.HasValue
-                ? (DateTime.UtcNow.Date - lastBookingDate.Value.Date).Days
-                : (DateTime.UtcNow.Date - intern.CreatedAt.Date).Days;
-
-            await _emailService.SendInternBookingReminderToSupervisorAsync(
-                supervisor.Email,
-                supervisor.FirstName,
-                intern.Name,
-                Math.Max(daysWithoutBooking, thresholdDays));
         }
 
         private static bool IsInternRole(string? roleName) =>

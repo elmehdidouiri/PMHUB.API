@@ -9,5 +9,9 @@ namespace PMHUB.Application.IServices
         Task<AnalyticsSummaryDto> GetSummaryAsync(AnalyticsQueryDto query);
         Task<AnalyticsKpisDto> GetKpisAsync(AnalyticsQueryDto query);
         Task<AnalyticsHoursDto> GetHoursAsync(AnalyticsQueryDto query);
+        Task<CapacityPriceDashboardDto> GetCapacityPriceDashboardAsync(CapacityPriceQueryDto query);
+        Task<InternCapacityPriceDashboardDto> GetInternCapacityPriceDashboardAsync(InternCapacityPriceQueryDto query);
+        Task<MemberTahDashboardDto> GetMemberTahDashboardAsync(MemberTahQueryDto query);
+        Task<string> ExportMemberTahDashboardAsync(MemberTahQueryDto query);
     }
 }

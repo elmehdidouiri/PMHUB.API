@@ -60,5 +60,46 @@ namespace PMHUB.API.Controllers
                 StatusCodes.Status501NotImplemented,
                 ApiResponse.Fail("Analytics export is reserved for a later step."));
         }
+
+        [HttpGet("capacity-price")]
+        public async Task<ActionResult<ApiResponse<CapacityPriceDashboardDto>>> GetCapacityPriceDashboard([FromQuery] CapacityPriceQueryDto query)
+        {
+            var result = await _analyticsService.GetCapacityPriceDashboardAsync(query);
+            return Ok(ApiResponse<CapacityPriceDashboardDto>.Ok(result));
+        }
+
+        [HttpGet("intern-capacity-price")]
+        public async Task<ActionResult<ApiResponse<InternCapacityPriceDashboardDto>>> GetInternCapacityPriceDashboard([FromQuery] InternCapacityPriceQueryDto query)
+        {
+            var result = await _analyticsService.GetInternCapacityPriceDashboardAsync(query);
+            return Ok(ApiResponse<InternCapacityPriceDashboardDto>.Ok(result));
+        }
+
+        [HttpGet("member-tah")]
+        public async Task<ActionResult<ApiResponse<MemberTahDashboardDto>>> GetMemberTahDashboard([FromQuery] MemberTahQueryDto query)
+        {
+            var result = await _analyticsService.GetMemberTahDashboardAsync(query);
+            var message = result.Summary.EmployeeCount + result.Summary.SubcontractorCount == 0
+                ? "No member TAH data was found for the requested filters."
+                : null;
+
+            return Ok(ApiResponse<MemberTahDashboardDto>.Ok(result, message));
+        }
+
+        [HttpGet("member-tah/export")]
+        public async Task<IActionResult> ExportMemberTahDashboard([FromQuery] MemberTahQueryDto query)
+        {
+            var relativePath = await _analyticsService.ExportMemberTahDashboardAsync(query);
+            var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativePath.TrimStart('/'));
+
+            if (!System.IO.File.Exists(fullPath))
+                return NotFound(ApiResponse.Fail("Le fichier d'export n'a pas pu être généré."));
+
+            var fileBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
+            return File(
+                fileBytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                Path.GetFileName(fullPath));
+        }
     }
 }

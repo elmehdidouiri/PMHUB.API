@@ -4,6 +4,9 @@ namespace PMHUB.Application.DTOs
     {
         public DashboardAdminSummaryDto Summary { get; set; } = new();
         public DashboardExtendedAdminChartsDto Charts { get; set; } = new();
+        public List<DashboardCreatedProjectDto> CreatedProjects { get; set; } = new();
+        public bool HasMoreCreatedProjects { get; set; }
+        public bool IsCreatedProjectsPeriodSelected { get; set; }
     }
 
     public class DashboardAdminSummaryDto
@@ -14,6 +17,16 @@ namespace PMHUB.Application.DTOs
         public int DelayedProjects { get; set; }
         public int DoneProjectsAboveTarget { get; set; }
         public int DoneProjectsBelowTarget { get; set; }
+        public int CreatedProjects { get; set; }
+    }
+
+    public class DashboardCreatedProjectDto
+    {
+        public Guid ProjectId { get; set; }
+        public string ProjectName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string Phase { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
     }
 
     public class DashboardExtendedAdminChartsDto

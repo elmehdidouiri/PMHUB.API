@@ -11,14 +11,14 @@ namespace PMHUB.Application.Services
 {
     public class TargetSettingsService : ITargetSettingsService
     {
-        private static readonly IReadOnlyDictionary<string, decimal> DefaultKpiTargets =
-            new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["OTD"] = 85m,
-                ["Effectiveness"] = 85m,
-                ["CSA"] = 85m,
-                ["MonthlyWorkingHours"] = 161.5m
-            };
+        private static readonly IReadOnlyList<(string Name, decimal Value, string? Description)> DefaultKpiTargets =
+        [
+            ("OTD", 85m, null),
+            ("Effectiveness", 85m, null),
+            ("CSA", 85m, null),
+            ("MonthlyWorkingHours", 182.75m, null),
+            ("TAH", 171.9m, "Monthly hours target used to calculate TAH. TAH = TAH target × TEff / 100.")
+        ];
 
         private readonly IRepository<CompanyTargetSettings> _companyTargetsRepository;
         private readonly IRepository<KpiTargetSetting> _kpiTargetsRepository;
@@ -46,9 +46,16 @@ namespace PMHUB.Application.Services
         public async Task<CompanyStandards> GetCompanyStandardsAsync()
         {
             var settings = await GetOrCreateCompanyTargetsAsync();
+            var monthlyTarget = settings.AnnualHoursTarget > 0
+                ? Math.Round(settings.AnnualHoursTarget / 12m, 2)
+                : 0m;
+            var hoursPerDay = settings.WorkingDaysPerMonth > 0
+                ? Math.Round(monthlyTarget / settings.WorkingDaysPerMonth, 2, MidpointRounding.AwayFromZero)
+                : settings.HoursPerDay;
+
             return new CompanyStandards
             {
-                HoursPerDay = settings.HoursPerDay,
+                HoursPerDay = hoursPerDay,
                 AnnualHoursTarget = settings.AnnualHoursTarget,
                 WorkingDaysPerMonth = settings.WorkingDaysPerMonth,
                 FiscalYearStartMonth = settings.FiscalYearStartMonth
@@ -187,13 +194,14 @@ namespace PMHUB.Application.Services
 
             foreach (var defaultTarget in DefaultKpiTargets)
             {
-                if (existingNames.Contains(defaultTarget.Key))
+                if (existingNames.Contains(defaultTarget.Name))
                     continue;
 
                 await _kpiTargetsRepository.AddAsync(new KpiTargetSetting
                 {
-                    Name = defaultTarget.Key,
+                    Name = defaultTarget.Name,
                     TargetValue = defaultTarget.Value,
+                    Description = defaultTarget.Description,
                     IsActive = true,
                     DisplayOrder = displayOrder++,
                     CreatedAt = DateTime.UtcNow
@@ -211,11 +219,14 @@ namespace PMHUB.Application.Services
             var monthlyTarget = settings.AnnualHoursTarget > 0
                 ? Math.Round(settings.AnnualHoursTarget / 12m, 2)
                 : 0m;
+            var hoursPerDay = settings.WorkingDaysPerMonth > 0
+                ? Math.Round(monthlyTarget / settings.WorkingDaysPerMonth, 2, MidpointRounding.AwayFromZero)
+                : settings.HoursPerDay;
 
             return new CompanyTargetSettingsDto
             {
                 Id = settings.Id,
-                HoursPerDay = settings.HoursPerDay,
+                HoursPerDay = hoursPerDay,
                 AnnualHoursTarget = settings.AnnualHoursTarget,
                 WorkingDaysPerMonth = settings.WorkingDaysPerMonth,
                 FiscalYearStartMonth = settings.FiscalYearStartMonth,

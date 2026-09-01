@@ -614,6 +614,9 @@ namespace PMHUB.Infrastructure.Migrations
                     b.Property<decimal>("EstimatedHours")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("IsManualValue")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1563,6 +1566,9 @@ namespace PMHUB.Infrastructure.Migrations
 
                     b.Property<bool>("IsApproved")
                         .HasColumnType("bit");
+
+                    b.Property<int>("MemberType")
+                        .HasColumnType("int");
 
                     b.Property<Guid?>("RoleId")
                         .HasColumnType("uniqueidentifier");

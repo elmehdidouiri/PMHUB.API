@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using PMHUB.Domain.Enums;
 
 namespace PMHUB.Application.DTOs
 {
@@ -15,11 +16,13 @@ namespace PMHUB.Application.DTOs
         public Guid? RoleId { get; set; }
         public string? RoleName { get; set; }
 
-         public bool IsAdmin { get; set; }
+        public bool IsAdmin { get; set; }
         public bool IsApproved { get; set; }
         public bool IsActive { get; set; }
 
-         public DateTime CreatedAt { get; set; }
+        public MemberType? MemberType { get; set; }
+
+        public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
 }

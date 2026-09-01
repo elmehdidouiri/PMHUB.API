@@ -11,6 +11,7 @@ namespace PMHUB.Application.DTOs
 
         public decimal LoggedHours { get; set; }
         public decimal TargetHours { get; set; }
+        public decimal RemainingHours { get; set; }
         public decimal Variance { get; set; }
         public decimal TotalCost { get; set; }
 

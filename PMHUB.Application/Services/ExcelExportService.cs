@@ -216,6 +216,162 @@ namespace PMHUB.Application.Services
             return $"/exports/{fileName}";
         }
 
+        public string GenerateMemberTahExcel(MemberTahDashboardDto data)
+        {
+            string folderPath = GetExportsFolder();
+            string fileName = $"Member_TAH_Export_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            string filePath = Path.Combine(folderPath, fileName);
+
+            using var workbook = new XLWorkbook();
+            AddMemberTahSummarySheet(workbook, data);
+            AddMemberTahMonthlySheet(workbook, data);
+            AddMemberTahMembersSheet(workbook, data);
+            AddMemberTahMemberMonthsSheet(workbook, data);
+
+            workbook.SaveAs(filePath);
+            return $"/exports/{fileName}";
+        }
+
+        private static void AddMemberTahSummarySheet(XLWorkbook workbook, MemberTahDashboardDto data)
+        {
+            var worksheet = workbook.Worksheets.Add("Summary");
+            ApplyHeaderStyle(worksheet, new[] { "Field", "Value" });
+
+            var rows = new (string Field, object? Value)[]
+            {
+                ("Period Start", data.Period.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                ("Period End", data.Period.EndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                ("Fiscal Year", data.Period.FiscalYear),
+                ("TAH Monthly Hours Target", data.TahMonthlyHoursTarget),
+                ("Employee Count", data.Summary.EmployeeCount),
+                ("Subcontractor Count", data.Summary.SubcontractorCount),
+                ("Average Effectiveness", data.Summary.AverageEffectiveness),
+                ("Cumulative TAH Hours", data.Summary.CumulativeTahHours),
+                ("Employee TAH Hours", data.Summary.EmployeeTahHours),
+                ("Subcontractor TAH Hours", data.Summary.SubcontractorTahHours),
+                ("Employee Share %", data.Summary.EmployeeSharePercentage),
+                ("Subcontractor Share %", data.Summary.SubcontractorSharePercentage)
+            };
+
+            for (int i = 0; i < rows.Length; i++)
+            {
+                SetExportCellValue(worksheet.Cell(i + 2, 1), rows[i].Field);
+                SetExportCellValue(worksheet.Cell(i + 2, 2), rows[i].Value);
+            }
+
+            worksheet.Columns().AdjustToContents();
+        }
+
+        private static void AddMemberTahMonthlySheet(XLWorkbook workbook, MemberTahDashboardDto data)
+        {
+            var worksheet = workbook.Worksheets.Add("Monthly Breakdown");
+            ApplyHeaderStyle(worksheet, new[]
+            {
+                "Year",
+                "Month",
+                "Month Name",
+                "Employee Count",
+                "Subcontractor Count",
+                "Average Effectiveness",
+                "TAH Hours",
+                "Employee TAH Hours",
+                "Subcontractor TAH Hours",
+                "Employee Share %",
+                "Subcontractor Share %"
+            });
+
+            int row = 2;
+            foreach (var month in data.MonthlyBreakdown)
+            {
+                SetExportCellValue(worksheet.Cell(row, 1), month.Year);
+                SetExportCellValue(worksheet.Cell(row, 2), month.Month);
+                SetExportCellValue(worksheet.Cell(row, 3), month.MonthName);
+                SetExportCellValue(worksheet.Cell(row, 4), month.EmployeeCount);
+                SetExportCellValue(worksheet.Cell(row, 5), month.SubcontractorCount);
+                SetExportCellValue(worksheet.Cell(row, 6), month.AverageEffectiveness);
+                SetExportCellValue(worksheet.Cell(row, 7), month.TahHours);
+                SetExportCellValue(worksheet.Cell(row, 8), month.EmployeeTahHours);
+                SetExportCellValue(worksheet.Cell(row, 9), month.SubcontractorTahHours);
+                SetExportCellValue(worksheet.Cell(row, 10), month.EmployeeSharePercentage);
+                SetExportCellValue(worksheet.Cell(row, 11), month.SubcontractorSharePercentage);
+                row++;
+            }
+
+            worksheet.Columns().AdjustToContents();
+        }
+
+        private static void AddMemberTahMembersSheet(XLWorkbook workbook, MemberTahDashboardDto data)
+        {
+            var worksheet = workbook.Worksheets.Add("Members");
+            ApplyHeaderStyle(worksheet, new[]
+            {
+                "Member",
+                "Type",
+                "Booked Hours",
+                "Effectiveness",
+                "TAH Hours"
+            });
+
+            int row = 2;
+            foreach (var member in data.Members)
+            {
+                SetExportCellValue(worksheet.Cell(row, 1), member.UserName);
+                SetExportCellValue(worksheet.Cell(row, 2), member.MemberTypeLabel);
+                SetExportCellValue(worksheet.Cell(row, 3), member.BookedHours);
+                SetExportCellValue(worksheet.Cell(row, 4), member.Effectiveness);
+                SetExportCellValue(worksheet.Cell(row, 5), member.TahHours);
+                row++;
+            }
+
+            worksheet.Columns().AdjustToContents();
+        }
+
+        private static void AddMemberTahMemberMonthsSheet(XLWorkbook workbook, MemberTahDashboardDto data)
+        {
+            var worksheet = workbook.Worksheets.Add("Member Months");
+            ApplyHeaderStyle(worksheet, new[]
+            {
+                "Member",
+                "Type",
+                "Year",
+                "Month",
+                "Month Name",
+                "Booked Hours",
+                "Effectiveness",
+                "TAH Hours"
+            });
+
+            int row = 2;
+            foreach (var member in data.Members)
+            {
+                foreach (var month in member.Monthly)
+                {
+                    SetExportCellValue(worksheet.Cell(row, 1), member.UserName);
+                    SetExportCellValue(worksheet.Cell(row, 2), member.MemberTypeLabel);
+                    SetExportCellValue(worksheet.Cell(row, 3), month.Year);
+                    SetExportCellValue(worksheet.Cell(row, 4), month.Month);
+                    SetExportCellValue(worksheet.Cell(row, 5), month.MonthName);
+                    SetExportCellValue(worksheet.Cell(row, 6), month.BookedHours);
+                    SetExportCellValue(worksheet.Cell(row, 7), month.Effectiveness);
+                    SetExportCellValue(worksheet.Cell(row, 8), month.TahHours);
+                    row++;
+                }
+            }
+
+            worksheet.Columns().AdjustToContents();
+        }
+
+        private static void ApplyHeaderStyle(IXLWorksheet worksheet, IReadOnlyList<string> headers)
+        {
+            for (int i = 0; i < headers.Count; i++)
+                worksheet.Cell(1, i + 1).Value = headers[i];
+
+            var headerRange = worksheet.Range(1, 1, 1, headers.Count);
+            headerRange.Style.Font.Bold = true;
+            headerRange.Style.Fill.BackgroundColor = XLColor.DarkBlue;
+            headerRange.Style.Font.FontColor = XLColor.White;
+        }
+
         private static string[] BuildProjectExportHeaders(
             string? exportType,
             int? fiscalYear,

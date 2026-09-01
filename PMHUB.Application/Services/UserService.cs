@@ -152,12 +152,31 @@ namespace PMHUB.Application.Services
             if (dto.IsActive.HasValue)
                 user.IsActive = dto.IsActive.Value;
 
+            if (dto.MemberType.HasValue)
+                user.MemberType = dto.MemberType.Value;
+
             user.UpdatedAt = DateTime.UtcNow;
 
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
 
             _logger.LogInformation("Utilisateur {UserId} mis à jour avec succès", dto.Id);
+        }
+
+        public async Task UpdateMemberTypeAsync(Guid userId, UpdateMemberTypeDto dto)
+        {
+            _logger.LogInformation("Mise à jour du MemberType de l'utilisateur {UserId}", userId);
+
+             var user = await _userRepository.GetByIdAsync(userId) as NormalUser
+                ?? throw new NotFoundException("User", userId);
+
+            user.MemberType = dto.MemberType;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            _logger.LogInformation("MemberType de l'utilisateur {UserId} mis à jour avec succès", userId);
         }
 
         public async Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto)

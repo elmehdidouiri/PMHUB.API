@@ -14,6 +14,7 @@ namespace PMHUB.Application.DTOs
 
         public decimal TargetValue { get; set; } = 0;
         public decimal CurrentValue { get; set; } = 0;
+        public bool? IsManualValue { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
         public DateTime? ActualEndDate { get; set; }
         public decimal EstimatedHours { get; set; } = 0;

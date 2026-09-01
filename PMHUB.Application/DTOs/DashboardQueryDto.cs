@@ -20,5 +20,7 @@ namespace PMHUB.Application.DTOs
         public string? ProjectManagementType { get; set; }
         public bool Ytd { get; set; }
         public int TopN { get; set; } = 5;
+        public int CreatedProjectsPage { get; set; } = 1;
+        public int CreatedProjectsPageSize { get; set; } = 5;
     }
 }

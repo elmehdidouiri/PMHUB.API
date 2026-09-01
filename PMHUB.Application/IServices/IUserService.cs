@@ -1,4 +1,4 @@
-﻿using PMHUB.Application.DTOs;
+using PMHUB.Application.DTOs;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -14,6 +14,7 @@ namespace PMHUB.Application.IServices
         Task<IEnumerable<UserDto>> GetTeamMemberCandidatesAsync();
         Task<IEnumerable<UserDto>> GetByRoleIdAsync(Guid roleId);
         Task UpdateUserAsync(UpdateUserDto dto);
+        Task UpdateMemberTypeAsync(Guid userId, UpdateMemberTypeDto dto);
         Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto);
         Task DeleteUserAsync(Guid userId);
         Task<bool> ValidateLoginAsync(string email, string password);

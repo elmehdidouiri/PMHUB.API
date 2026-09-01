@@ -208,18 +208,54 @@ namespace PMHUB.Application.Services
 
         private static decimal CalculateAverageOtd(IEnumerable<Project> projects)
         {
-            var now = DateTime.UtcNow.Date;
-            var datedProjects = projects.Where(p => p.EstimatedDueDate.HasValue).ToList();
+            var projectList = projects.ToList();
+            var scores = projectList
+                .SelectMany(project => project.KPIs.Select(kpi => new { project, kpi }))
+                .Where(x => string.Equals(x.kpi.Name, "OTD", StringComparison.OrdinalIgnoreCase))
+                .Select(x => CalculateOtdScore(x.project, x.kpi))
+                .Where(score => score.HasValue)
+                .Select(score => score!.Value)
+                .ToList();
+
+            if (scores.Count > 0)
+                return Math.Round(scores.Average(), 2);
+
+            var datedProjects = projectList
+                .Where(p => p.Status == ProjectStatus.Done && p.EstimatedDueDate.HasValue && p.EndDate.HasValue)
+                .ToList();
             if (!datedProjects.Any())
             {
                 return 0m;
             }
 
             var onTimeProjects = datedProjects.Count(p =>
-                (p.Status == ProjectStatus.Done && p.EndDate.HasValue && p.EndDate.Value.Date <= p.EstimatedDueDate!.Value.Date) ||
-                (p.Status != ProjectStatus.Done && p.EstimatedDueDate!.Value.Date >= now));
+                p.EndDate!.Value.Date <= p.EstimatedDueDate!.Value.Date);
 
             return Math.Round(onTimeProjects * 100m / datedProjects.Count, 2);
+        }
+
+        private static decimal? CalculateOtdScore(Project project, KPI kpi)
+        {
+            if (kpi.IsManualValue || kpi.CurrentValue > 0)
+                return NormalizePercentage(kpi.CurrentValue);
+
+            var dueDate = kpi.EstimatedDueDate ?? project.EstimatedDueDate;
+            var endDate = kpi.ActualEndDate ?? project.EndDate;
+            if (!dueDate.HasValue || !endDate.HasValue)
+                return null;
+
+            if (endDate.Value.Date <= dueDate.Value.Date)
+                return 100m;
+
+            if (endDate.Value <= project.StartDate)
+                return null;
+
+            var plannedDuration = dueDate.Value - project.StartDate;
+            var actualDuration = endDate.Value - project.StartDate;
+            if (plannedDuration <= TimeSpan.Zero || actualDuration <= TimeSpan.Zero)
+                return null;
+
+            return Math.Round(Math.Min(100m, (decimal)(plannedDuration.TotalDays / actualDuration.TotalDays) * 100m), 2);
         }
 
         // ── GET PAGED ─────────────────────────────────────────
@@ -1641,7 +1677,7 @@ namespace PMHUB.Application.Services
                 ["OTD"] = 85m,
                 ["Effectiveness"] = 85m,
                 ["CSA"] = 85m,
-                ["MonthlyWorkingHours"] = 161.5m
+                ["MonthlyWorkingHours"] = 182.75m
             };
 
         private static void SyncKpis(
@@ -1692,6 +1728,7 @@ namespace PMHUB.Application.Services
                         Name = name,
                         TargetValue = targetValue,
                         CurrentValue = ResolveKpiCurrentValue(project, name, kpiDto),
+                        IsManualValue = ResolveKpiIsManualValue(kpiDto),
                         EstimatedDueDate = ResolveKpiEstimatedDueDate(project, name, kpiDto),
                         ActualEndDate = ResolveKpiActualEndDate(project, name, kpiDto),
                         EstimatedHours = ResolveKpiEstimatedHours(project, name, kpiDto),
@@ -1705,6 +1742,7 @@ namespace PMHUB.Application.Services
                     existingKpi.Name = name;
                     existingKpi.TargetValue = targetValue;
                     existingKpi.CurrentValue = ResolveKpiCurrentValue(project, name, kpiDto);
+                    existingKpi.IsManualValue = ResolveKpiIsManualValue(kpiDto);
                     existingKpi.EstimatedDueDate = ResolveKpiEstimatedDueDate(project, name, kpiDto);
                     existingKpi.ActualEndDate = ResolveKpiActualEndDate(project, name, kpiDto);
                     existingKpi.EstimatedHours = ResolveKpiEstimatedHours(project, name, kpiDto);
@@ -1726,6 +1764,11 @@ namespace PMHUB.Application.Services
             return CalculateEffectivenessPercentage(
                 ResolveKpiEstimatedHours(project, name, kpiDto),
                 ResolveKpiActualHours(project, name, kpiDto));
+        }
+
+        private static bool ResolveKpiIsManualValue(CreateKpiDto kpiDto)
+        {
+            return kpiDto.IsManualValue ?? kpiDto.CurrentValue > 0;
         }
 
         private static DateTime? ResolveKpiEstimatedDueDate(Project project, string name, CreateKpiDto kpiDto)

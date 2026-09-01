@@ -33,7 +33,10 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<IEnumerable<AdminHourBookingNotificationDto>>>> GetInactiveUserNotifications(CancellationToken cancellationToken)
         {
             var notifications = await _reminderService.GetUsersWithoutRecentBookingsAsync(cancellationToken);
-            return Ok(ApiResponse<IEnumerable<AdminHourBookingNotificationDto>>.Ok(notifications));
+            var userNotifications = notifications.Where(notification =>
+                string.Equals(notification.TargetType, "User", StringComparison.OrdinalIgnoreCase));
+
+            return Ok(ApiResponse<IEnumerable<AdminHourBookingNotificationDto>>.Ok(userNotifications));
         }
 
         [HttpGet("~/api/admin/monthly-target-notifications")]

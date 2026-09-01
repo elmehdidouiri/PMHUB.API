@@ -88,6 +88,7 @@ namespace PMHUB.Application.Mappings
                 Name = k.Name,
                 TargetValue = k.TargetValue,
                 CurrentValue = k.CurrentValue,
+                IsManualValue = k.IsManualValue,
                 CalculatedValue = k.CalculatedValue,
                 EstimatedHours = k.EstimatedHours,
                 ActualHours = k.ActualHours,

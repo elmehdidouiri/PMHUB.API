@@ -12,6 +12,7 @@ namespace PMHUB.Application.DTOs
         public string Name { get; set; } = string.Empty;
         public decimal TargetValue { get; set; }
         public decimal CurrentValue { get; set; }
+        public bool IsManualValue { get; set; }
         public decimal? CalculatedValue { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
         public DateTime? ActualEndDate { get; set; }

@@ -97,11 +97,6 @@ namespace PMHUB.Application.Services.Implementation
                 project = await _projectRepository.GetByIdAsync(dto.ProjectId.Value)
                     ?? throw new NotFoundException("Project", dto.ProjectId.Value);
 
-                var canBookProjectHours = await _projectRepository.FindAsync(p =>
-                    p.Id == dto.ProjectId.Value &&
-                    (p.ProjectManagerId == userId || p.ProjectMembers.Any(pm => pm.UserId == userId)));
-                if (!canBookProjectHours.Any())
-                    throw new ForbiddenException("You must be a project team member or the project manager to book hours on this project.");
             }
             else if (dto.ProjectId.HasValue && dto.ProjectId.Value != Guid.Empty)
             {
@@ -349,9 +344,9 @@ namespace PMHUB.Application.Services.Implementation
             var startDate = new DateTime(year, month, 1);
             var endDate = startDate.AddMonths(1).AddDays(-1);
             var today = DateTime.Today;
-            
+
             var standards = await _targetSettingsService.GetCompanyStandardsAsync();
-            var workingDays = standards.WorkingDaysPerMonth;
+            var workingDays = WorkingDaysCalendar.CountWeekdaysInMonth(year, month);
             var targetHours = standards.MonthlyHoursTarget;
 
             var entries = await _hourEntryRepository.FindWithIncludesAsync(h => h.UserId == userId && h.Date >= startDate && h.Date <= endDate);
@@ -372,8 +367,14 @@ namespace PMHUB.Application.Services.Implementation
             var totalOtherHours = entriesList.Sum(h => h.OtherHours);
             var totalInternManagementHours = entriesList.Sum(h => h.InternManagementHours);
 
-            var daysLeft = Math.Max((endDate - today).Days, 0);
-            var hoursNeeded = Math.Max(targetHours - loggedHours, 0);
+            var remainingHours = Math.Max(targetHours - loggedHours, 0);
+            var daysLeft = WorkingDaysCalendar.CountRemainingWeekdays(today, startDate, endDate);
+            var dailyTarget = workingDays > 0
+                ? Math.Round(targetHours / workingDays, 2, MidpointRounding.AwayFromZero)
+                : 0m;
+            var dailyNeeded = daysLeft > 0
+                ? Math.Round(remainingHours / daysLeft, 2, MidpointRounding.AwayFromZero)
+                : 0m;
 
             return new MonthlyHoursDashboardDto
             {
@@ -381,12 +382,13 @@ namespace PMHUB.Application.Services.Implementation
                 Month = month,
                 LoggedHours = loggedHours,
                 TargetHours = targetHours,
+                RemainingHours = remainingHours,
                 Variance = loggedHours - targetHours,
                 TotalCost = totalCost,
                 WorkingDays = workingDays,
-                DailyTarget = Math.Round(targetHours / workingDays, 1),
+                DailyTarget = dailyTarget,
                 DaysLeft = daysLeft,
-                DailyNeeded = daysLeft > 0 ? Math.Round(hoursNeeded / daysLeft, 1) : 0,
+                DailyNeeded = dailyNeeded,
                 Progress = targetHours > 0 ? Math.Round((loggedHours / targetHours) * 100, 1) : 0,
                 PremiumHours = premiumHours,
                 PremiumPendingHours = premiumPendingHours,
@@ -484,8 +486,7 @@ namespace PMHUB.Application.Services.Implementation
         public async Task<IEnumerable<ProjectSummaryDto>> GetMyProjectsAsync(Guid userId)
         {
             _logger.LogInformation("GetMyProjectsAsync — User: {UserId}", userId);
-            var projects = await _projectRepository.FindSummariesAsync(p =>
-                p.ProjectManagerId == userId || p.ProjectMembers.Any(m => m.UserId == userId));
+            var projects = await _projectRepository.GetAllSummariesAsync();
             return projects.Select(project =>
             {
                 var actualHours = project.HourEntries.Sum(entry => entry.TotalHours);

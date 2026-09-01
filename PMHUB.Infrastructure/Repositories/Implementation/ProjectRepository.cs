@@ -289,11 +289,35 @@ namespace PMHUB.Infrastructure.Repositories
             }
 
             var period = ResolveProjectPeriod(query);
-            if (period.Start.HasValue)
-                queryable = queryable.Where(p => p.StartDate >= period.Start.Value);
+            // Do not surface projected portfolio statistics for periods that have not begun.
+            if (period.Start.HasValue && period.Start.Value.Date > DateTime.UtcNow.Date)
+                return queryable.Where(_ => false);
 
-            if (period.EndExclusive.HasValue)
-                queryable = queryable.Where(p => p.StartDate < period.EndExclusive.Value);
+            if (period.Start.HasValue && period.EndExclusive.HasValue)
+            {
+                var start = period.Start.Value;
+                var endExclusive = period.EndExclusive.Value;
+                queryable = queryable.Where(p =>
+                    (p.Status != ProjectStatus.Done &&
+                        p.StartDate < endExclusive &&
+                        (!p.EndDate.HasValue || p.EndDate.Value >= start)) ||
+                    (p.Status == ProjectStatus.Done &&
+                        p.EndDate.HasValue &&
+                        p.EndDate.Value >= start &&
+                        p.EndDate.Value < endExclusive));
+            }
+            else
+            {
+                if (period.Start.HasValue)
+                    queryable = queryable.Where(p =>
+                        p.Status != ProjectStatus.Done ||
+                        (p.EndDate.HasValue && p.EndDate.Value >= period.Start.Value));
+
+                if (period.EndExclusive.HasValue)
+                    queryable = queryable.Where(p =>
+                        p.Status != ProjectStatus.Done ||
+                        (p.EndDate.HasValue && p.EndDate.Value < period.EndExclusive.Value));
+            }
 
             if (query.DelayedOnly)
             {
@@ -375,36 +399,34 @@ namespace PMHUB.Infrastructure.Repositories
             {
                 if (query.Ytd)
                 {
-                    var companyYear = query.Year.HasValue && query.Year.Value > 0
+                    var calendarYear = query.Year.HasValue && query.Year.Value > 0
                         ? query.Year.Value
-                        : CompanyYearHelper.GetCurrentCompanyYear(DateTime.UtcNow.Date);
+                        : DateTime.UtcNow.Year;
 
-                    start = CompanyYearHelper.GetCompanyYearStart(companyYear);
+                    start = new DateTime(calendarYear, 1, 1);
 
                     if (query.Month is >= 1 and <= 12)
                     {
-                        var calendarYear = query.Month.Value >= 10 ? companyYear - 1 : companyYear;
                         endExclusive = new DateTime(calendarYear, query.Month.Value, 1).AddMonths(1);
                     }
                     else
                     {
-                        var companyYearEndExclusive = CompanyYearHelper.GetCompanyYearEnd(companyYear).AddDays(1);
+                        var calendarYearEndExclusive = start.Value.AddYears(1);
                         var todayEndExclusive = DateTime.UtcNow.Date.AddDays(1);
-                        endExclusive = todayEndExclusive < companyYearEndExclusive
+                        endExclusive = todayEndExclusive < calendarYearEndExclusive
                             ? todayEndExclusive
-                            : companyYearEndExclusive;
+                            : calendarYearEndExclusive;
                     }
                 }
                 else if (query.Year.HasValue && query.Month is >= 1 and <= 12)
                 {
-                    var calendarYear = query.Month.Value >= 10 ? query.Year.Value - 1 : query.Year.Value;
-                    start = new DateTime(calendarYear, query.Month.Value, 1);
+                    start = new DateTime(query.Year.Value, query.Month.Value, 1);
                     endExclusive = start.Value.AddMonths(1);
                 }
                 else if (query.Year.HasValue)
                 {
-                    start = CompanyYearHelper.GetCompanyYearStart(query.Year.Value);
-                    endExclusive = CompanyYearHelper.GetCompanyYearEnd(query.Year.Value).AddDays(1);
+                    start = new DateTime(query.Year.Value, 1, 1);
+                    endExclusive = start.Value.AddYears(1);
                 }
             }
 

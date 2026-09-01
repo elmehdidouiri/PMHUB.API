@@ -22,6 +22,9 @@ namespace PMHUB.Domain.Entities
         [Column(TypeName = "decimal(18,2)")]
         public decimal CurrentValue { get; set; } = 0m;
 
+        // Distinguishes a deliberately entered 0% from a value that must be calculated.
+        public bool IsManualValue { get; set; }
+
          public DateTime? EstimatedDueDate { get; set; }
         public DateTime? ActualEndDate { get; set; }
 
@@ -36,11 +39,31 @@ namespace PMHUB.Domain.Entities
         {
             get
             {
-                if (string.Equals(Name, "OTD", StringComparison.OrdinalIgnoreCase) &&
-                    EstimatedDueDate.HasValue &&
-                    ActualEndDate.HasValue)
+                if (string.Equals(Name, "OTD", StringComparison.OrdinalIgnoreCase))
                 {
-                    return ActualEndDate.Value.Date <= EstimatedDueDate.Value.Date ? 100m : 0m;
+                    // A manually entered OTD always takes precedence over the date-based value.
+                    if (IsManualValue || CurrentValue > 0)
+                        return CurrentValue;
+
+                    var dueDate = EstimatedDueDate ?? Project?.EstimatedDueDate;
+                    var endDate = ActualEndDate ?? Project?.EndDate;
+                    var startDate = Project?.StartDate;
+
+                    if (!dueDate.HasValue || !endDate.HasValue)
+                        return null;
+
+                    if (endDate.Value.Date <= dueDate.Value.Date)
+                        return 100m;
+
+                    if (!startDate.HasValue || endDate.Value <= startDate.Value)
+                        return null;
+
+                    var plannedDuration = dueDate.Value - startDate.Value;
+                    var actualDuration = endDate.Value - startDate.Value;
+                    if (plannedDuration <= TimeSpan.Zero || actualDuration <= TimeSpan.Zero)
+                        return null;
+
+                    return Math.Round(Math.Min(100m, (decimal)(plannedDuration.TotalDays / actualDuration.TotalDays) * 100m), 2);
                 }
 
                 if (string.Equals(Name, "Effectiveness", StringComparison.OrdinalIgnoreCase) &&

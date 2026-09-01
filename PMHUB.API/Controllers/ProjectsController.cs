@@ -69,7 +69,7 @@ namespace PMHUB.API.Controllers
         public async Task<ActionResult<ApiResponse<PaginatedResultDto<ProjectSummaryDto>>>> GetPaged(
             [FromQuery] ProjectSearchDto query)
         {
-            if (!query.All && !IsCurrentUserAdmin())
+            if (!query.All && !IsCurrentUserAdmin() && !IsCurrentUserProjectManager())
                 query.UserId = GetAuthenticatedUserId();
 
             var result = await _service.GetPagedAsync(query);
@@ -457,5 +457,12 @@ namespace PMHUB.API.Controllers
 
         private bool IsCurrentUserAdmin() =>
             string.Equals(User.FindFirst("isAdmin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+
+        private bool IsCurrentUserProjectManager()
+        {
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            return string.Equals(role, "Project Manager", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(role, "ProjectManager", StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

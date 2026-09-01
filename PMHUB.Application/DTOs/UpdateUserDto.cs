@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel.DataAnnotations;
 using PMHUB.Domain.Enums;
 
@@ -20,6 +20,13 @@ namespace PMHUB.Application.DTOs
         public Guid? RoleId { get; set; }
         public string? RoleName { get; set; }
         public bool? IsActive { get; set; }
+        public MemberType? MemberType { get; set; }
+    }
+
+    public class UpdateMemberTypeDto
+    {
+        [Required(ErrorMessage = "MemberType is required.")]
+        public MemberType MemberType { get; set; }
     }
 
     public class ChangePasswordDto

@@ -36,7 +36,9 @@ namespace PMHUB.Application.Mappings
             Id = entry.Id,
             InternAllocationId = entry.InternAllocationId,
             BookedByUserId = entry.BookedByUserId,
-            BookedByUserName = $"{entry.BookedByUser.FirstName} {entry.BookedByUser.LastName}".Trim(),
+            BookedByUserName = entry.BookedByUser is null
+                ? string.Empty
+                : $"{entry.BookedByUser.FirstName} {entry.BookedByUser.LastName}".Trim(),
             Date = entry.Date,
             Hours = entry.Hours,
             Notes = entry.Notes,

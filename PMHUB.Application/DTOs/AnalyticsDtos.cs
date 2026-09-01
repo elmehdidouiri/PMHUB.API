@@ -41,6 +41,7 @@ namespace PMHUB.Application.DTOs
     {
         public decimal AverageEffectiveness { get; set; }
         public decimal AverageOtd { get; set; }
+        public AnalyticsOtdDiagnosticsDto OtdDiagnostics { get; set; } = new();
         public decimal AverageCsat { get; set; }
         public int TotalProjects { get; set; }
         public int ProjectsWithData { get; set; }
@@ -49,6 +50,17 @@ namespace PMHUB.Application.DTOs
         public decimal AverageMonthlyHours { get; set; }
         public decimal AverageUtilization { get; set; }
         public int ActiveTeamMembers { get; set; }
+    }
+
+    public class AnalyticsOtdDiagnosticsDto
+    {
+        public int CompletedProjectsWithOtdDates { get; set; }
+        public int CompletedOnTimeProjects { get; set; }
+        public int CompletedLateProjects { get; set; }
+        public int ProjectsExcludedForMissingOtdDates { get; set; }
+        public int IncompleteProjectsExcludedFromOtd { get; set; }
+        public int ManualOtdKpis { get; set; }
+        public int CalculatedOtdKpis { get; set; }
     }
 
     public class AnalyticsKpisDto

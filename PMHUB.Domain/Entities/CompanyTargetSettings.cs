@@ -9,7 +9,7 @@ namespace PMHUB.Domain.Entities
         public Guid Id { get; set; } = Guid.NewGuid();
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal HoursPerDay { get; set; } = 8.5m;
+        public decimal HoursPerDay { get; set; } = 8.31m;
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal AnnualHoursTarget { get; set; } = 2193m;
