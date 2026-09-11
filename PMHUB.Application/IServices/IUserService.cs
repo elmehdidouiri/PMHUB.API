@@ -15,6 +15,7 @@ namespace PMHUB.Application.IServices
         Task<IEnumerable<UserDto>> GetByRoleIdAsync(Guid roleId);
         Task UpdateUserAsync(UpdateUserDto dto);
         Task UpdateMemberTypeAsync(Guid userId, UpdateMemberTypeDto dto);
+        Task ToggleEmailNotificationsAsync(Guid userId, ToggleEmailNotificationsDto dto);
         Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto);
         Task DeleteUserAsync(Guid userId);
         Task<bool> ValidateLoginAsync(string email, string password);

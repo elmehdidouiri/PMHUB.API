@@ -29,6 +29,15 @@ namespace PMHUB.Application.DTOs
         public MemberType MemberType { get; set; }
     }
 
+    /// <summary>
+    /// Active ou désactive les notifications email (reminders) pour un utilisateur.
+    /// </summary>
+    public class ToggleEmailNotificationsDto
+    {
+        [Required(ErrorMessage = "EmailNotificationsEnabled est requis.")]
+        public bool EmailNotificationsEnabled { get; set; }
+    }
+
     public class ChangePasswordDto
     {
         [Required(ErrorMessage = "Current password is required.")]

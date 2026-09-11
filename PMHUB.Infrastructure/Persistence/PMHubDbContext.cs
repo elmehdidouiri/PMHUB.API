@@ -138,6 +138,11 @@ namespace PMHUB.Infrastructure.Persistence
             .HasForeignKey(u => u.ApprovedById)
                     .OnDelete(DeleteBehavior.Restrict);
 
+            // ── NormalUser : EmailNotificationsEnabled default true
+            builder.Entity<NormalUser>()
+                .Property(u => u.EmailNotificationsEnabled)
+                .HasDefaultValue(true);
+
             // ── Intern  
             builder.Entity<Intern>()
                 .HasOne(i => i.Role)

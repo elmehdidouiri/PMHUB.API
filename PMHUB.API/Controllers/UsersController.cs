@@ -83,6 +83,28 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse.Ok("MemberType mis à jour avec succès."));
         }
 
+        // PUT api/users/{id}/email-notifications
+        /// <summary>
+        /// Active ou désactive l'envoi des emails de rappel/notifications pour un utilisateur.
+        /// </summary>
+        [HttpPut("{id:guid}/email-notifications")]
+        [Authorize(Policy = "AdminOnly")]
+        public async Task<ActionResult<ApiResponse>> ToggleEmailNotifications(
+            Guid id,
+            [FromBody] ToggleEmailNotificationsDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            await _userService.ToggleEmailNotificationsAsync(id, dto);
+
+            var message = dto.EmailNotificationsEnabled
+                ? "Notifications email activées avec succès."
+                : "Notifications email désactivées avec succès.";
+
+            return Ok(ApiResponse.Ok(message));
+        }
+
         // PUT api/users/me/password
         [HttpPut("me/password")]
         [Authorize]

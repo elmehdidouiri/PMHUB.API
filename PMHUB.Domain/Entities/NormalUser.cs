@@ -9,6 +9,12 @@ namespace PMHUB.Domain.Entities
         public bool IsActive { get; set; } = true;
         public bool IsApproved { get; set; } = false;
 
+        /// <summary>
+        /// Indique si l'utilisateur accepte de recevoir les emails de rappel/notifications.
+        /// Lorsque false, aucun reminder automatique ne lui est envoyé.
+        /// </summary>
+        public bool EmailNotificationsEnabled { get; set; } = true;
+
         public MemberType MemberType { get; set; } = MemberType.Employee;
 
         public Guid? RoleId { get; set; }

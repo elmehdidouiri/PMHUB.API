@@ -21,6 +21,7 @@ public static class UserEntityDtoMapper
             IsAdmin = user is Admin,
             IsApproved = normalUser?.IsApproved ?? false,
             IsActive = normalUser?.IsActive ?? false,
+            EmailNotificationsEnabled = normalUser?.EmailNotificationsEnabled ?? true,
             MemberType = normalUser?.MemberType,
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt

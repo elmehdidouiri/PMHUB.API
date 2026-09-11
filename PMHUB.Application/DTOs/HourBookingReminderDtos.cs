@@ -22,12 +22,11 @@ namespace PMHUB.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
-        public Guid? SupervisorId { get; set; }
-        public string? SupervisorName { get; set; }
-        public string? SupervisorEmail { get; set; }
         public DateTime? LastBookingDate { get; set; }
         public int DaysWithoutBooking { get; set; }
         public string Message { get; set; } = string.Empty;
+        /// <summary>Indique si les emails de rappel sont activés pour cet utilisateur.</summary>
+        public bool EmailNotificationsEnabled { get; set; } = true;
     }
 
     public class AdminMonthlyTargetNotificationDto
@@ -43,5 +42,7 @@ namespace PMHUB.Application.DTOs
         public decimal MissingHours { get; set; }
         public decimal CompletionRate { get; set; }
         public string Message { get; set; } = string.Empty;
+        /// <summary>Indique si les emails de rappel sont activés pour cet utilisateur.</summary>
+        public bool EmailNotificationsEnabled { get; set; } = true;
     }
 }

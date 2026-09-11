@@ -19,6 +19,7 @@ namespace PMHUB.Application.DTOs
         public bool IsAdmin { get; set; }
         public bool IsApproved { get; set; }
         public bool IsActive { get; set; }
+        public bool EmailNotificationsEnabled { get; set; }
 
         public MemberType? MemberType { get; set; }
 

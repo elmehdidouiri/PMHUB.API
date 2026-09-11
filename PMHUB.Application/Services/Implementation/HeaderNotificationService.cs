@@ -456,9 +456,7 @@ namespace PMHUB.Application.Services.Implementation
                         ["email"] = booking.Email,
                         ["lastBookingDate"] = booking.LastBookingDate,
                         ["daysWithoutBooking"] = booking.DaysWithoutBooking,
-                        ["supervisorId"] = booking.SupervisorId,
-                        ["supervisorName"] = booking.SupervisorName,
-                        ["supervisorEmail"] = booking.SupervisorEmail
+                         
                     }
                 });
             }

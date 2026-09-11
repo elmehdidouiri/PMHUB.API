@@ -179,6 +179,26 @@ namespace PMHUB.Application.Services
             _logger.LogInformation("MemberType de l'utilisateur {UserId} mis à jour avec succès", userId);
         }
 
+        public async Task ToggleEmailNotificationsAsync(Guid userId, ToggleEmailNotificationsDto dto)
+        {
+            _logger.LogInformation(
+                "Mise à jour des notifications email de l'utilisateur {UserId} → {Enabled}",
+                userId, dto.EmailNotificationsEnabled);
+
+            var user = await _userRepository.GetByIdAsync(userId) as NormalUser
+                ?? throw new NotFoundException("User", userId);
+
+            user.EmailNotificationsEnabled = dto.EmailNotificationsEnabled;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            var state = dto.EmailNotificationsEnabled ? "activées" : "désactivées";
+            _logger.LogInformation(
+                "Notifications email de l'utilisateur {UserId} {State} avec succès", userId, state);
+        }
+
         public async Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto)
         {
             _logger.LogInformation("Changement du mot de passe pour l'utilisateur {UserId}", userId);

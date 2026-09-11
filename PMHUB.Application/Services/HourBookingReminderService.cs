@@ -48,6 +48,12 @@ namespace PMHUB.Application.Services.Implementation
 
             foreach (var user in users)
             {
+                // Ignorer les utilisateurs ayant désactivé les notifications email
+                if (!user.EmailNotificationsEnabled)
+                {
+                    _logger.LogDebug("Rappel hebdomadaire ignoré pour l'utilisateur {UserId} (notifications désactivées)", user.Id);
+                    continue;
+                }
                 cancellationToken.ThrowIfCancellationRequested();
 
                 try
@@ -93,6 +99,7 @@ namespace PMHUB.Application.Services.Implementation
             var userIdsWithRecentEntries = await _hourEntryRepository.GetUserIdsWithEntriesSinceAsync(thresholdDate);
             var notifications = new List<AdminHourBookingNotificationDto>();
 
+            // Tous les users sans booking récent sont listés ; le flag signale ceux sans emails
             foreach (var user in users.Where(u => !userIdsWithRecentEntries.Contains(u.Id)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -110,6 +117,7 @@ namespace PMHUB.Application.Services.Implementation
                     Email = user.Email,
                     LastBookingDate = lastBookingDate,
                     DaysWithoutBooking = Math.Max(daysWithoutBooking, thresholdDays),
+                    EmailNotificationsEnabled = user.EmailNotificationsEnabled,
                     Message = $"{user.FirstName} {user.LastName} has not booked hours for at least {thresholdDays} days."
                 });
             }
@@ -162,6 +170,7 @@ namespace PMHUB.Application.Services.Implementation
                     TargetHours = Math.Round(targetHours, 2),
                     MissingHours = Math.Round(missingHours, 2),
                     CompletionRate = completionRate,
+                    EmailNotificationsEnabled = user.EmailNotificationsEnabled,
                     Message = $"{user.FirstName} {user.LastName} has booked {bookedHours:0.##}h out of {targetHours:0.##}h for {resolvedMonth:00}/{resolvedYear}."
                 });
             }
@@ -180,6 +189,12 @@ namespace PMHUB.Application.Services.Implementation
             if (user is null)
             {
                 throw new NotFoundException("User", userId);
+            }
+
+            if (!user.EmailNotificationsEnabled)
+            {
+                throw new BadRequestException(
+                    "Les notifications email sont désactivées pour cet utilisateur. Activez-les avant d'envoyer un rappel.");
             }
 
             if (IsInternRole(user.Role?.Name))
