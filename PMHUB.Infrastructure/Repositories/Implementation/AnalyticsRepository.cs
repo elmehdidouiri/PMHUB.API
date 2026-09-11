@@ -192,6 +192,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 Users = await _context.Users
                     .OfType<NormalUser>()
                     .AsNoTracking()
+                    .Where(u => u.IsActive && u.IsApproved)
                     .OrderBy(u => u.FirstName)
                     .ThenBy(u => u.LastName)
                     .Select(u => new AnalyticsOptionDto<Guid>
@@ -279,7 +280,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var ids = projectIds.ToList();
             var query = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => h.ProjectId.HasValue && ids.Contains(h.ProjectId.Value) && h.Date >= startDate && h.Date <= endDate);
+                .Where(h => h.ProjectId.HasValue && ids.Contains(h.ProjectId.Value) && h.Date >= startDate && h.Date <= endDate &&
+                            h.User.IsActive && h.User.IsApproved);
 
             if (userId.HasValue && userId.Value != Guid.Empty)
                 query = query.Where(h => h.UserId == userId.Value);
@@ -518,7 +520,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
             var query = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => h.ProjectId.HasValue && ids.Contains(h.ProjectId.Value) && h.Date >= startDate && h.Date <= endDate);
+                .Where(h => h.ProjectId.HasValue && ids.Contains(h.ProjectId.Value) && h.Date >= startDate && h.Date <= endDate &&
+                            h.User.IsActive && h.User.IsApproved);
 
             if (userId.HasValue && userId.Value != Guid.Empty)
                 query = query.Where(h => h.UserId == userId.Value);
@@ -807,23 +810,54 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var startDate = new DateTime(year, month, 1);
             var endDate = startDate.AddMonths(1).AddTicks(-1);
 
-            // The target is based on every active normal user, excluding interns.
-            // Interns can be identified either by their member type or by their role.
+            // The normal-member dashboard includes both internal employees and
+            // subcontractors. Interns are deliberately kept out: their hours can
+            // be booked through allocations as well as user accounts and are
+            // therefore reported by the dedicated intern dashboard.
             var activeMembers = await _context.Users
                 .OfType<NormalUser>()
                 .AsNoTracking()
-                .Where(u => u.IsActive &&
-                            u.MemberType != MemberType.intern &&
-                            (u.Role == null || u.Role.Name != "Intern"))
+                .Where(u => u.IsActive && u.IsApproved &&
+                            (u.MemberType == MemberType.Employee || u.MemberType == MemberType.Subcontractor) &&
+                            (u.Role == null ||
+                             (u.Role.Name.ToLower() != "intern" && u.Role.Name.ToLower() != "stagiaire")) &&
+                            !_context.Interns.Any(i => i.Name == (u.FirstName + " " + u.LastName).Trim()))
                 .Select(u => new 
                 { 
                     u.Id, 
                     u.FirstName, 
-                    u.LastName 
+                    u.LastName,
+                    u.MemberType
                 })
                 .ToListAsync();
 
             var activeMemberIds = activeMembers.Select(u => u.Id).ToList();
+
+            var memberCounts = await _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive && u.IsApproved)
+                .GroupBy(_ => 1)
+                .Select(g => new MemberPopulationDto
+                {
+                    EmployeeCount = g.Count(u => u.MemberType == MemberType.Employee &&
+                                                 (u.Role == null ||
+                                                  (u.Role.Name.ToLower() != "intern" && u.Role.Name.ToLower() != "stagiaire")) &&
+                                                 !_context.Interns.Any(i => i.Name == (u.FirstName + " " + u.LastName).Trim())),
+                    InternCount = g.Count(u => u.MemberType == MemberType.intern ||
+                                               (u.Role != null &&
+                                                (u.Role.Name.ToLower() == "intern" || u.Role.Name.ToLower() == "stagiaire"))),
+                    SubcontractorCount = g.Count(u => u.MemberType == MemberType.Subcontractor &&
+                                                     (u.Role == null ||
+                                                      (u.Role.Name.ToLower() != "intern" && u.Role.Name.ToLower() != "stagiaire")))
+                })
+                .FirstOrDefaultAsync() ?? new MemberPopulationDto();
+
+            // Interns are managed in their own table and do not inherit from
+            // NormalUser, so their population cannot be derived from Users.
+            memberCounts.InternCount = await _context.Interns
+                .AsNoTracking()
+                .CountAsync();
 
             var hoursDataDict = new Dictionary<Guid, decimal>();
             if (activeMemberIds.Count > 0)
@@ -850,14 +884,18 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var totalTargetHours = targetHoursPerMember * activeUsersCount;
             var totalBookedHours = hoursDataDict.Values.Sum();
 
-            var memberCapacities = activeMembers.Select(emp =>
+            var memberCapacities = activeMembers.Select(member =>
             {
-                decimal booked = hoursDataDict.TryGetValue(emp.Id, out var value) ? value : 0m;
+                decimal booked = hoursDataDict.TryGetValue(member.Id, out var value) ? value : 0m;
                 return new MemberCapacityDto
                 {
-                    UserId = emp.Id,
-                    UserName = (emp.FirstName + " " + emp.LastName).Trim(),
+                    UserId = member.Id,
+                    UserName = (member.FirstName + " " + member.LastName).Trim(),
+                    MemberType = member.MemberType == MemberType.Subcontractor ? "Subcontractor" : "Employee",
                     BookedHours = Math.Round(booked, 2),
+                    TargetHours = Math.Round(targetHoursPerMember, 2),
+                    RemainingHours = Math.Round(Math.Max(0m, targetHoursPerMember - booked), 2),
+                    VarianceHours = Math.Round(booked - targetHoursPerMember, 2),
                     Percentage = targetHoursPerMember > 0
                         ? Math.Round((booked / targetHoursPerMember) * 100m, 2)
                         : 0m
@@ -868,23 +906,32 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             {
                 ActualBookedHours = Math.Round(totalBookedHours, 2),
                 TargetHours = Math.Round(totalTargetHours, 2),
-                RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2)
+                RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2),
+                VarianceHours = Math.Round(totalBookedHours - totalTargetHours, 2),
+                AchievementPercentage = totalTargetHours > 0
+                    ? Math.Round(totalBookedHours / totalTargetHours * 100m, 2)
+                    : 0m
             };
 
             var totalPriceTarget = totalTargetHours * query.HourlyRate;
             var totalBookedPrice = totalBookedHours * query.HourlyRate;
 
-            var memberPrices = activeMembers.Select(emp =>
+            var memberPrices = activeMembers.Select(member =>
             {
-                decimal booked = hoursDataDict.TryGetValue(emp.Id, out var value) ? value : 0m;
+                decimal booked = hoursDataDict.TryGetValue(member.Id, out var value) ? value : 0m;
                 decimal bookedPrice = booked * query.HourlyRate;
+                decimal targetPrice = targetHoursPerMember * query.HourlyRate;
                 return new MemberPriceDto
                 {
-                    UserId = emp.Id,
-                    UserName = (emp.FirstName + " " + emp.LastName).Trim(),
+                    UserId = member.Id,
+                    UserName = (member.FirstName + " " + member.LastName).Trim(),
+                    MemberType = member.MemberType == MemberType.Subcontractor ? "Subcontractor" : "Employee",
                     BookedPrice = Math.Round(bookedPrice, 2),
-                    Percentage = totalPriceTarget > 0
-                        ? Math.Round((bookedPrice / (targetHoursPerMember * query.HourlyRate)) * 100m, 2)
+                    TargetPrice = Math.Round(targetPrice, 2),
+                    RemainingPrice = Math.Round(Math.Max(0m, targetPrice - bookedPrice), 2),
+                    VariancePrice = Math.Round(bookedPrice - targetPrice, 2),
+                    Percentage = targetPrice > 0
+                        ? Math.Round((bookedPrice / targetPrice) * 100m, 2)
                         : 0m
                 };
             }).OrderByDescending(x => x.BookedPrice).ToList();
@@ -893,11 +940,16 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             {
                 BookedPrice = Math.Round(totalBookedPrice, 2),
                 TargetPrice = Math.Round(totalPriceTarget, 2),
-                RemainingPrice = Math.Round(Math.Max(0, totalPriceTarget - totalBookedPrice), 2)
+                RemainingPrice = Math.Round(Math.Max(0m, totalPriceTarget - totalBookedPrice), 2),
+                VariancePrice = Math.Round(totalBookedPrice - totalPriceTarget, 2),
+                AchievementPercentage = totalPriceTarget > 0
+                    ? Math.Round(totalBookedPrice / totalPriceTarget * 100m, 2)
+                    : 0m
             };
 
             return new CapacityPriceDashboardDto
             {
+                MemberCounts = memberCounts,
                 MemberCapacities = memberCapacities,
                 CapacityTarget = capacityTarget,
                 MemberPrices = memberPrices,
@@ -944,8 +996,11 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var accountInterns = await _context.Users
                 .OfType<NormalUser>()
                 .AsNoTracking()
-                .Where(u => u.IsActive &&
-                    (u.MemberType == MemberType.intern || (u.Role != null && u.Role.Name == "Intern")))
+                .Where(u => u.IsActive && u.IsApproved &&
+                    (u.MemberType == MemberType.intern ||
+                     (u.Role != null &&
+                      (u.Role.Name.ToLower() == "intern" || u.Role.Name.ToLower() == "stagiaire"))) &&
+                    !_context.Interns.Any(i => i.Name == (u.FirstName + " " + u.LastName).Trim()))
                 .Select(u => new
                 {
                     u.Id,
@@ -1077,13 +1132,21 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 {
                     ActualBookedHours = Math.Round(totalBookedHours, 2),
                     TargetHours = Math.Round(totalTargetHours, 2),
-                    RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2)
+                    RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2),
+                    VarianceHours = Math.Round(totalBookedHours - totalTargetHours, 2),
+                    AchievementPercentage = totalTargetHours > 0
+                        ? Math.Round(totalBookedHours / totalTargetHours * 100m, 2)
+                        : 0m
                 },
                 PriceTarget = new PriceTargetDto
                 {
                     BookedPrice = Math.Round(totalBookedPrice, 2),
                     TargetPrice = Math.Round(totalTargetPrice, 2),
-                    RemainingPrice = Math.Round(Math.Max(0m, totalTargetPrice - totalBookedPrice), 2)
+                    RemainingPrice = Math.Round(Math.Max(0m, totalTargetPrice - totalBookedPrice), 2),
+                    VariancePrice = Math.Round(totalBookedPrice - totalTargetPrice, 2),
+                    AchievementPercentage = totalTargetPrice > 0
+                        ? Math.Round(totalBookedPrice / totalTargetPrice * 100m, 2)
+                        : 0m
                 },
                 Interns = interns.Select(intern =>
                 {
@@ -1192,8 +1255,11 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var membersQuery = _context.Users
                 .OfType<NormalUser>()
                 .AsNoTracking()
-                .Where(u => u.IsActive &&
-                            (u.MemberType == MemberType.Employee || u.MemberType == MemberType.Subcontractor));
+                .Where(u => u.IsActive && u.IsApproved &&
+                            (u.MemberType == MemberType.Employee || u.MemberType == MemberType.Subcontractor) &&
+                            (u.Role == null ||
+                             (u.Role.Name.ToLower() != "intern" && u.Role.Name.ToLower() != "stagiaire")) &&
+                            !_context.Interns.Any(i => i.Name == (u.FirstName + " " + u.LastName).Trim()));
 
             if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
                 membersQuery = membersQuery.Where(u => u.Id == query.UserId.Value);

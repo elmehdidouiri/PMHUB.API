@@ -22,6 +22,7 @@ public class CreateFullProjectDto
     public Guid? ProjectManagerId { get; set; }
 
     public DateTime? EndDate { get; set; }
+    public DateTime? EstimatedStartDate { get; set; }
     public DateTime? EstimatedDueDate { get; set; }
 
     public ProjectPhase Phase { get; set; } = ProjectPhase.Pipeline;

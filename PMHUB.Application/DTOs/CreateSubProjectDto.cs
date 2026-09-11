@@ -20,6 +20,7 @@ namespace PMHUB.Application.DTOs
         public DateTime StartDate { get; set; }
 
         public DateTime? EndDate { get; set; }
+        public DateTime? EstimatedStartDate { get; set; }
 
         public ProjectPhase Phase { get; set; } = ProjectPhase.Pipeline;
         public ProjectStatus Status { get; set; } = ProjectStatus.Planned;

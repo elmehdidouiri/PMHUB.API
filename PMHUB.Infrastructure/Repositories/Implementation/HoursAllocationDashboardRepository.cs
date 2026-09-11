@@ -39,6 +39,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 Users = await _context.Users
                     .OfType<NormalUser>()
                     .AsNoTracking()
+                    .Where(u => u.IsActive && u.IsApproved)
                     .OrderBy(u => u.FirstName)
                     .ThenBy(u => u.LastName)
                     .Select(u => new HoursAllocationOptionDto<Guid>
@@ -68,7 +69,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     .ToListAsync(),
                 Members = await _context.ProjectMembers
                     .AsNoTracking()
-                    .Where(pm => !pm.Project.ProjectManagerId.HasValue || pm.UserId != pm.Project.ProjectManagerId.Value)
+                    .Where(pm => pm.User.IsActive && pm.User.IsApproved &&
+                        (!pm.Project.ProjectManagerId.HasValue || pm.UserId != pm.Project.ProjectManagerId.Value))
                     .GroupBy(pm => new { pm.UserId, pm.User.FirstName, pm.User.LastName })
                     .OrderBy(g => g.Key.FirstName)
                     .ThenBy(g => g.Key.LastName)
@@ -180,7 +182,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         {
             var hoursQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => h.Date >= startDate && h.Date <= endDate);
+                .Where(h => h.Date >= startDate && h.Date <= endDate && h.User.IsActive && h.User.IsApproved);
 
             if (query.UserId.HasValue && query.UserId.Value != Guid.Empty)
                 hoursQuery = hoursQuery.Where(h => h.UserId == query.UserId.Value);

@@ -37,7 +37,8 @@ namespace PMHUB.Infrastructure.Repositories
 
             var allHoursScopedQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value));
+                .Where(h => h.ProjectId.HasValue && projectIdsQuery.Contains(h.ProjectId.Value) &&
+                            h.User.IsActive && h.User.IsApproved);
 
             var trackedHoursQuery = ApplyYearMonthFilter(allHoursScopedQuery, query.Year, query.Month);
             var ytdHoursQuery = ApplyYtdFilter(allHoursScopedQuery, query.Year, query.Month);
@@ -65,6 +66,7 @@ namespace PMHUB.Infrastructure.Repositories
                     Id = p.Id,
                     Status = p.Status,
                     StartDate = p.StartDate,
+                    EstimatedStartDate = p.EstimatedStartDate,
                     EndDate = p.EndDate,
                     EstimatedDueDate = p.EstimatedDueDate,
                     EstimatedHours = p.EstimatedHours,
@@ -128,6 +130,7 @@ namespace PMHUB.Infrastructure.Repositories
             var projectTeamMembersByRole = await _context.ProjectMembers
                 .AsNoTracking()
                 .Where(pm => projectIdsQuery.Contains(pm.ProjectId) &&
+                    pm.User.IsActive && pm.User.IsApproved &&
                     (!pm.Project.ProjectManagerId.HasValue || pm.UserId != pm.Project.ProjectManagerId.Value))
                 .GroupBy(pm => new { pm.RoleId, pm.Role.Name })
                 .Select(g => new UsersByRoleDto
@@ -270,7 +273,8 @@ namespace PMHUB.Infrastructure.Repositories
 
             var allPersonalHoursQuery = _context.HourEntries
                 .AsNoTracking()
-                .Where(h => h.UserId == userId && h.ProjectId.HasValue && scopedProjectIdsQuery.Contains(h.ProjectId.Value));
+                .Where(h => h.UserId == userId && h.User.IsActive && h.User.IsApproved &&
+                            h.ProjectId.HasValue && scopedProjectIdsQuery.Contains(h.ProjectId.Value));
 
             var trackedHoursQuery = ApplyYearMonthFilter(allPersonalHoursQuery, query.Year, query.Month);
             var ytdHoursQuery = ApplyYtdFilter(allPersonalHoursQuery, query.Year, query.Month);
@@ -554,6 +558,7 @@ namespace PMHUB.Infrastructure.Repositories
                     Status = p.Status,
                     StartDate = p.StartDate,
                     EndDate = p.EndDate,
+                    EstimatedStartDate = p.EstimatedStartDate,
                     EstimatedDueDate = p.EstimatedDueDate,
                     EstimatedHours = p.EstimatedHours,
                     ActualHours = p.ActualHours,
@@ -691,6 +696,7 @@ namespace PMHUB.Infrastructure.Repositories
                     ProjectType = p.ProjectType,
                     StartDate = p.StartDate,
                     EndDate = p.EndDate,
+                    EstimatedStartDate = p.EstimatedStartDate,
                     EstimatedDueDate = p.EstimatedDueDate,
                     ProgressPercentage = p.ProgressPercentage,
                     Budget = p.Budget,
@@ -776,6 +782,8 @@ namespace PMHUB.Infrastructure.Repositories
                     ProjectType = p.ProjectType.ToString(),
                     StartDate = p.StartDate,
                     EndDate = p.EndDate,
+                    EstimatedStartDate = p.EstimatedStartDate,
+                    EstimatedDueDate = p.EstimatedDueDate,
                     ProgressPercentage = p.ProgressPercentage,
                     IsDelayed = p.EstimatedDueDate.HasValue &&
                         p.EstimatedDueDate.Value.Date < now &&
@@ -1288,6 +1296,7 @@ namespace PMHUB.Infrastructure.Repositories
             public Guid Id { get; set; }
             public ProjectStatus Status { get; set; }
             public DateTime StartDate { get; set; }
+            public DateTime? EstimatedStartDate { get; set; }
             public DateTime? EndDate { get; set; }
             public DateTime? EstimatedDueDate { get; set; }
             public decimal EstimatedHours { get; set; }
@@ -1335,6 +1344,7 @@ namespace PMHUB.Infrastructure.Repositories
             public ProjectType ProjectType { get; set; }
             public DateTime StartDate { get; set; }
             public DateTime? EndDate { get; set; }
+            public DateTime? EstimatedStartDate { get; set; }
             public DateTime? EstimatedDueDate { get; set; }
             public int ProgressPercentage { get; set; }
             public decimal Budget { get; set; }
@@ -1372,7 +1382,7 @@ namespace PMHUB.Infrastructure.Repositories
             if (query.RoleId.HasValue && query.RoleId.Value != Guid.Empty)
                 usersQuery = usersQuery.Where(u => u.RoleId == query.RoleId.Value);
 
-            return usersQuery;
+            return usersQuery.Where(u => u.IsActive && u.IsApproved);
         }
 
         private static IQueryable<HourEntry> ApplyYearMonthFilter(IQueryable<HourEntry> query, int? year, int? month)

@@ -14,6 +14,7 @@ namespace PMHUB.Application.Validators
             AddDepartmentErrors(errors, dto.DepartmentId, dto.DepartmentIds);
             AddDateErrors(errors, dto.StartDate ?? DateTime.UtcNow.Date, dto.EndDate, dto.EstimatedDueDate);
             AddPhaseStatusErrors(errors, dto.Phase, dto.Status);
+            AddEstimatedStartDateErrors(errors, dto.Status, dto.EstimatedStartDate);
 
             if (dto.ProjectType.HasValue)
             {
@@ -37,6 +38,11 @@ namespace PMHUB.Application.Validators
             if (dto.Phase.HasValue && dto.Status.HasValue)
             {
                 AddPhaseStatusErrors(errors, dto.Phase.Value, dto.Status.Value);
+            }
+
+            if (dto.Status.HasValue)
+            {
+                AddEstimatedStartDateErrors(errors, dto.Status.Value, dto.EstimatedStartDate);
             }
 
             if (dto.ProjectType.HasValue)
@@ -92,6 +98,14 @@ namespace PMHUB.Application.Validators
             {
                 throw new BadRequestException(
                     $"Status '{status}' is not valid for phase '{phase}'.");
+            }
+        }
+
+        public static void ValidateEstimatedStartDate(ProjectStatus status, DateTime? estimatedStartDate)
+        {
+            if (status == ProjectStatus.OnHold && !estimatedStartDate.HasValue)
+            {
+                throw new BadRequestException("An estimated start date is required when a project is on hold.");
             }
         }
 
@@ -164,6 +178,17 @@ namespace PMHUB.Application.Validators
             if (!allowedStatuses.Contains(status))
             {
                 AddError(errors, "status", $"Status '{status}' is not valid for phase '{phase}'.");
+            }
+        }
+
+        private static void AddEstimatedStartDateErrors(
+            IDictionary<string, string[]> errors,
+            ProjectStatus status,
+            DateTime? estimatedStartDate)
+        {
+            if (status == ProjectStatus.OnHold && !estimatedStartDate.HasValue)
+            {
+                AddError(errors, "estimatedStartDate", "An estimated start date is required when a project is on hold.");
             }
         }
 

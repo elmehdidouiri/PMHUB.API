@@ -21,6 +21,7 @@ namespace PMHUB.Application.Mappings
             ProjectType = p.ProjectType,
             StartDate = p.StartDate,
             EndDate = p.EndDate,
+            EstimatedStartDate = p.EstimatedStartDate,
             EstimatedDueDate = p.EstimatedDueDate,
             Budget = p.Budget,
             ProjectManagerId = p.ProjectManagerId,
@@ -153,6 +154,7 @@ namespace PMHUB.Application.Mappings
                 ProjectType = p.ProjectType.ToString(),
                 StartDate = p.StartDate,
                 EndDate = p.EndDate,
+                EstimatedStartDate = p.EstimatedStartDate,
                 EstimatedDueDate = p.EstimatedDueDate,
                 ProgressPercentage = p.ProgressPercentage,
                 IsDelayed = p.EstimatedDueDate.HasValue &&
@@ -239,6 +241,7 @@ namespace PMHUB.Application.Mappings
             yield return new("Department", p.DepartmentId != Guid.Empty || p.ProjectDepartments.Any());
             yield return new("Budget", p.Budget > 0);
             yield return new("StartDate", p.StartDate != default);
+            yield return new("EstimatedStartDate", p.Status != ProjectStatus.OnHold || p.EstimatedStartDate.HasValue);
             yield return new("EstimatedDueDate", p.EstimatedDueDate.HasValue);
             yield return new("EndDate", p.Status != ProjectStatus.Done || p.EndDate.HasValue);
             yield return new("ProjectManager", p.ProjectManagerId.HasValue);

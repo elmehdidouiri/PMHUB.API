@@ -24,6 +24,7 @@ namespace PMHUB.Application.DTOs
         public DateTime? StartDate { get; set; }
         public Guid? ProjectManagerId { get; set; }
         public DateTime? EndDate { get; set; }
+        public DateTime? EstimatedStartDate { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
 
         [Required(ErrorMessage = "Project phase is required.")]

@@ -25,6 +25,7 @@ namespace PMHUB.Domain.Entities
         public DateTime StartDate { get; set; }
 
         public DateTime? EndDate { get; set; }
+        public DateTime? EstimatedStartDate { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
 
         [Required]

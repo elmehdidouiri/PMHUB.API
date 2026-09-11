@@ -18,6 +18,7 @@ namespace PMHUB.Application.DTOs
         public string ProjectType { get; set; } = string.Empty;
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
+        public DateTime? EstimatedStartDate { get; set; }
         public DateTime? EstimatedDueDate { get; set; }
         public int ProgressPercentage { get; set; }
         public int Progress => ProgressPercentage;

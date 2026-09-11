@@ -511,6 +511,7 @@ namespace PMHUB.Application.Services
             project.Budget = dto.Budget.Value;
             project.StartDate = dto.StartDate.Value;
             project.EndDate = dto.EndDate;
+            project.EstimatedStartDate = dto.EstimatedStartDate;
             project.EstimatedDueDate = dto.EstimatedDueDate;
             project.Phase = dto.Phase.Value;
             project.Status = dto.Status.Value;
@@ -726,6 +727,11 @@ namespace PMHUB.Application.Services
             if (dto.EstimatedDueDate.HasValue)
                 project.EstimatedDueDate = dto.EstimatedDueDate.Value;
 
+            if (dto.EstimatedStartDate.HasValue)
+                project.EstimatedStartDate = dto.EstimatedStartDate.Value;
+
+            ProjectValidator.ValidateEstimatedStartDate(project.Status, project.EstimatedStartDate);
+
             if (project.EndDate.HasValue && project.EndDate <= project.StartDate)
                 throw new BadRequestException("The project end date must be greater than the project start date.");
 
@@ -890,6 +896,7 @@ namespace PMHUB.Application.Services
                     "The subproject end date must be greater than the start date.");
 
             ProjectValidator.ValidatePhaseStatus(dto.Phase, dto.Status);
+            ProjectValidator.ValidateEstimatedStartDate(dto.Status, dto.EstimatedStartDate);
 
             var subProject = new Project
             {
@@ -898,6 +905,7 @@ namespace PMHUB.Application.Services
                 Budget = dto.Budget,
                 StartDate = dto.StartDate,
                 EndDate = dto.EndDate,
+                EstimatedStartDate = dto.EstimatedStartDate,
                 Phase = dto.Phase,
                 Status = dto.Status,
                 ProjectManagementType = parent.ProjectManagementType,
@@ -1590,6 +1598,7 @@ namespace PMHUB.Application.Services
             Budget = 0m,
             StartDate = DateTime.UtcNow.Date,
             EndDate = null,
+            EstimatedStartDate = dto.EstimatedStartDate,
             EstimatedDueDate = null,
             Phase = dto.Phase,
             Status = dto.Status,
