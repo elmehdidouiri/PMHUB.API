@@ -161,10 +161,11 @@ namespace PMHUB.Application.Services.Implementation
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var projects = (await _projectRepository.FindWithIncludesAsync(p =>
+            var projects = (await _projectRepository.FindForHeaderNotificationsAsync(p =>
                     p.Status != ProjectStatus.Done &&
                     ((p.EstimatedDueDate.HasValue && p.EstimatedDueDate.Value.Date <= dueLimit) ||
-                     (p.UpdatedAt.HasValue && p.UpdatedAt.Value >= recentlyUpdatedSince))))
+                     (p.UpdatedAt.HasValue && p.UpdatedAt.Value >= recentlyUpdatedSince)),
+                    cancellationToken))
                 .ToList();
 
             AddProjectDueNotifications(notifications, projects, today, lowProgressThreshold);
@@ -385,7 +386,7 @@ namespace PMHUB.Application.Services.Implementation
         {
             foreach (var project in projects)
             {
-                foreach (var roadblock in project.RoadblockEntries
+                foreach (var roadblock in (project.RoadblockEntries ?? Array.Empty<ProjectRoadblock>())
                              .Where(r => r.Status != RoadblockStatus.Resolved && r.DueAt.Date <= dueLimit))
                 {
                     var daysUntilDue = (roadblock.DueAt.Date - today).Days;

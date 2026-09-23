@@ -17,6 +17,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         Task<IEnumerable<HourEntry>> GetByProjectAsync(Guid projectId, int? year = null, int? month = null);
         Task<HashSet<Guid>> GetUserIdsWithEntriesSinceAsync(DateTime since);
         Task<DateTime?> GetLastBookingDateAsync(Guid userId);
+        Task<IReadOnlyDictionary<Guid, DateTime>> GetLastBookingDatesAsync(
+            IEnumerable<Guid> userIds,
+            CancellationToken cancellationToken = default);
         Task<decimal> SumUserHoursAsync(Guid userId, DateTime from, DateTime to);
+        Task<IReadOnlyDictionary<Guid, decimal>> SumHoursByUserAsync(
+            IEnumerable<Guid> userIds,
+            DateTime from,
+            DateTime to,
+            CancellationToken cancellationToken = default);
     }
 }

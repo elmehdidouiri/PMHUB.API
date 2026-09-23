@@ -26,6 +26,15 @@ namespace PMHUB.API.Middleware
             {
                 await _next(context);
             }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                // The client disconnected (or its timeout elapsed). The response can no
+                // longer be delivered, so this must not be reported as an application 500.
+                _logger.LogInformation(
+                    "Request {Method} {Path} was cancelled by the client.",
+                    context.Request.Method,
+                    context.Request.Path);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Intercepted exception: {Message}", ex.Message);

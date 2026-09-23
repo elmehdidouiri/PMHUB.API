@@ -97,14 +97,20 @@ namespace PMHUB.Application.Services.Implementation
             var thresholdDate = DateTime.UtcNow.Date.AddDays(-thresholdDays);
             var users = (await _userRepository.GetActiveApprovedNormalUsersAsync()).ToList();
             var userIdsWithRecentEntries = await _hourEntryRepository.GetUserIdsWithEntriesSinceAsync(thresholdDate);
+            var inactiveUsers = users.Where(u => !userIdsWithRecentEntries.Contains(u.Id)).ToList();
+            var lastBookingDates = await _hourEntryRepository.GetLastBookingDatesAsync(
+                inactiveUsers.Select(u => u.Id),
+                cancellationToken);
             var notifications = new List<AdminHourBookingNotificationDto>();
 
             // Tous les users sans booking récent sont listés ; le flag signale ceux sans emails
-            foreach (var user in users.Where(u => !userIdsWithRecentEntries.Contains(u.Id)))
+            foreach (var user in inactiveUsers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var lastBookingDate = await _hourEntryRepository.GetLastBookingDateAsync(user.Id);
+                DateTime? lastBookingDate = lastBookingDates.TryGetValue(user.Id, out var lastDate)
+                    ? lastDate
+                    : null;
                 var daysWithoutBooking = lastBookingDate.HasValue
                     ? (DateTime.UtcNow.Date - lastBookingDate.Value.Date).Days
                     : (DateTime.UtcNow.Date - user.CreatedAt.Date).Days;
@@ -141,13 +147,18 @@ namespace PMHUB.Application.Services.Implementation
             var companyStandards = await _targetSettingsService.GetCompanyStandardsAsync();
             var targetHours = companyStandards.MonthlyHoursTarget;
             var users = (await _userRepository.GetActiveApprovedNormalUsersAsync()).ToList();
+            var hoursByUser = await _hourEntryRepository.SumHoursByUserAsync(
+                users.Select(u => u.Id),
+                monthStart,
+                monthEnd,
+                cancellationToken);
             var notifications = new List<AdminMonthlyTargetNotificationDto>();
 
             foreach (var user in users)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var bookedHours = await _hourEntryRepository.SumUserHoursAsync(user.Id, monthStart, monthEnd);
+                hoursByUser.TryGetValue(user.Id, out var bookedHours);
                 if (bookedHours >= targetHours)
                 {
                     continue;

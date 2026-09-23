@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PMHUB.Application.DTOs;
+using PMHUB.Application.Exceptions;
 using PMHUB.Application.IRepositories;
 using PMHUB.Application.IServices;
 using PMHUB.Domain.Entities;
@@ -30,12 +31,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         private readonly PMHubDbContext _context;
         private readonly ITargetSettingsService _targetSettingsService;
         private CompanyStandards _standards;
+        private decimal _monthlyHoursTargetPerMember;
 
         public AnalyticsRepository(PMHubDbContext context, IOptions<CompanyStandards> standards, ITargetSettingsService targetSettingsService)
         {
             _context = context;
             _standards = standards.Value;
             _targetSettingsService = targetSettingsService;
+            _monthlyHoursTargetPerMember = _standards.MonthlyHoursTarget;
         }
 
         public async Task<AnalyticsDashboardDto> GetDashboardAsync(AnalyticsQueryDto query)
@@ -116,7 +119,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 ? BuildKpiTrend(projectMetricRows, selectedKpis, selectedHours, monthlyPeriods)
                 : new List<AnalyticsKpiMonthlyTrendDto>();
             var monthlyByCategory = includeHours
-                ? BuildMonthlyHoursByCategory(selectedHours, monthlyPeriods)
+                ? BuildMonthlyHoursByCategory(selectedHours, monthlyPeriods, _monthlyHoursTargetPerMember)
                 : new List<AnalyticsMonthlyHoursByCategoryDto>();
             var utilizationTrend = includeHours
                 ? BuildUtilizationTrend(selectedHours, monthlyPeriods)
@@ -281,7 +284,10 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             var query = _context.HourEntries
                 .AsNoTracking()
                 .Where(h => h.ProjectId.HasValue && ids.Contains(h.ProjectId.Value) && h.Date >= startDate && h.Date <= endDate &&
-                            h.User.IsActive && h.User.IsApproved);
+                            h.User.IsActive && h.User.IsApproved &&
+                            h.User.RoleId.HasValue && h.User.Role != null &&
+                            h.User.Role.Name.ToLower() != "intern" &&
+                            h.User.Role.Name.ToLower() != "stagiaire");
 
             if (userId.HasValue && userId.Value != Guid.Empty)
                 query = query.Where(h => h.UserId == userId.Value);
@@ -453,7 +459,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
 
         private static List<AnalyticsMonthlyHoursByCategoryDto> BuildMonthlyHoursByCategory(
             List<HourEntry> hours,
-            List<(DateTime Start, DateTime End)> monthlyPeriods)
+            List<(DateTime Start, DateTime End)> monthlyPeriods,
+            decimal targetHoursPerMember)
         {
             return monthlyPeriods
                 .Select(period =>
@@ -461,6 +468,8 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                     var monthHours = hours
                         .Where(h => h.Date >= period.Start && h.Date <= period.End)
                         .ToList();
+                    var activeNonInternMembers = monthHours.Select(h => h.UserId).Distinct().Count();
+                    var targetHours = activeNonInternMembers * targetHoursPerMember;
 
                     return new AnalyticsMonthlyHoursByCategoryDto
                     {
@@ -475,7 +484,10 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                         WorkshopHours = Math.Round(monthHours.Sum(h => h.WorkshopHours), 2),
                         OtherHours = Math.Round(monthHours.Sum(h => h.OtherHours), 2),
                         InternManagementHours = Math.Round(monthHours.Sum(h => h.InternManagementHours), 2),
-                        TotalHours = Math.Round(monthHours.Sum(h => h.TotalHours), 2)
+                        TotalHours = Math.Round(monthHours.Sum(h => h.TotalHours), 2),
+                        ActiveNonInternMembers = activeNonInternMembers,
+                        TargetHoursPerMember = Math.Round(targetHoursPerMember, 2),
+                        TargetHours = Math.Round(targetHours, 2)
                     };
                 })
                 .ToList();
@@ -493,7 +505,7 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                         .ToList();
                     var activeUsers = monthHours.Select(h => h.UserId).Distinct().Count();
                     var loggedHours = monthHours.Sum(h => h.TotalHours);
-                    var targetHours = activeUsers * _standards.MonthlyHoursTarget;
+                    var targetHours = activeUsers * _monthlyHoursTargetPerMember;
 
                     return new AnalyticsUtilizationTrendDto
                     {
@@ -731,6 +743,14 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             return denominator <= 0 ? 0m : NormalizePercentage(numerator * 100m / denominator);
         }
 
+        private static decimal CalculateAchievementPercentage(decimal numerator, decimal denominator)
+        {
+            if (denominator <= 0m || numerator <= 0m)
+                return 0m;
+
+            return Math.Round(numerator * 100m / denominator, 2);
+        }
+
         private static decimal CalculateEffectivenessPercentage(decimal estimatedHours, decimal actualHours)
         {
             return actualHours <= 0 ? 0m : NormalizePercentage(estimatedHours * 100m / actualHours);
@@ -774,6 +794,10 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         private async Task LoadTargetSettingsAsync()
         {
             _standards = await _targetSettingsService.GetCompanyStandardsAsync();
+            var kpiTargets = await _targetSettingsService.GetActiveKpiTargetValuesAsync();
+            _monthlyHoursTargetPerMember = kpiTargets.TryGetValue("MonthlyWorkingHours", out var target)
+                ? target
+                : _standards.MonthlyHoursTarget;
         }
 
         private class ProjectMetricRow
@@ -954,6 +978,89 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
                 CapacityTarget = capacityTarget,
                 MemberPrices = memberPrices,
                 PriceTarget = priceTarget
+            };
+        }
+
+        public async Task<ProjectCapacityPriceDashboardDto> GetProjectCapacityPriceDashboardAsync(AnalyticsQueryDto query)
+        {
+            // Capacity and price are lifecycle measures: the project estimate and
+            // budget must be compared with all actual bookings, not only those in
+            // the currently selected month.
+            var projectRows = await BuildProjectsQuery(query)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Name,
+                    p.Status,
+                    p.Phase,
+                    TargetHours = p.EstimatedHours,
+                    TargetPrice = p.Budget,
+                    BookedHours = p.HourEntries.Sum(h => (decimal?)h.TotalHours) ?? 0m,
+                    LabourCost = p.HourEntries.Sum(h => (decimal?)h.TotalCost) ?? 0m,
+                    ResourceCost = p.ProjectResources.Sum(r => (decimal?)(r.PricePerUnit * r.Quantity)) ?? 0m
+                })
+                .ToListAsync();
+
+            var projects = projectRows
+                .Select(row =>
+                {
+                    var bookedPrice = row.LabourCost + row.ResourceCost;
+                    return new ProjectCapacityPriceDto
+                    {
+                        ProjectId = row.Id,
+                        ProjectName = row.Name,
+                        Status = row.Status,
+                        Phase = row.Phase,
+                        BookedHours = Math.Round(row.BookedHours, 2),
+                        TargetHours = Math.Round(row.TargetHours, 2),
+                        RemainingHours = Math.Round(Math.Max(0m, row.TargetHours - row.BookedHours), 2),
+                        VarianceHours = Math.Round(row.BookedHours - row.TargetHours, 2),
+                        CapacityAchievementPercentage = row.TargetHours > 0
+                            ? Math.Round(row.BookedHours / row.TargetHours * 100m, 2)
+                            : 0m,
+                        LabourCost = Math.Round(row.LabourCost, 2),
+                        ResourceCost = Math.Round(row.ResourceCost, 2),
+                        BookedPrice = Math.Round(bookedPrice, 2),
+                        TargetPrice = Math.Round(row.TargetPrice, 2),
+                        RemainingPrice = Math.Round(Math.Max(0m, row.TargetPrice - bookedPrice), 2),
+                        VariancePrice = Math.Round(bookedPrice - row.TargetPrice, 2),
+                        PriceAchievementPercentage = row.TargetPrice > 0
+                            ? Math.Round(bookedPrice / row.TargetPrice * 100m, 2)
+                            : 0m
+                    };
+                })
+                .OrderByDescending(project => project.BookedPrice)
+                .ToList();
+
+            var totalBookedHours = projects.Sum(project => project.BookedHours);
+            var totalTargetHours = projects.Sum(project => project.TargetHours);
+            var totalBookedPrice = projects.Sum(project => project.BookedPrice);
+            var totalTargetPrice = projects.Sum(project => project.TargetPrice);
+
+            return new ProjectCapacityPriceDashboardDto
+            {
+                ProjectCount = projects.Count,
+                CapacityTarget = new CapacityTargetDto
+                {
+                    ActualBookedHours = Math.Round(totalBookedHours, 2),
+                    TargetHours = Math.Round(totalTargetHours, 2),
+                    RemainingHours = Math.Round(Math.Max(0m, totalTargetHours - totalBookedHours), 2),
+                    VarianceHours = Math.Round(totalBookedHours - totalTargetHours, 2),
+                    AchievementPercentage = totalTargetHours > 0
+                        ? Math.Round(totalBookedHours / totalTargetHours * 100m, 2)
+                        : 0m
+                },
+                PriceTarget = new PriceTargetDto
+                {
+                    BookedPrice = Math.Round(totalBookedPrice, 2),
+                    TargetPrice = Math.Round(totalTargetPrice, 2),
+                    RemainingPrice = Math.Round(Math.Max(0m, totalTargetPrice - totalBookedPrice), 2),
+                    VariancePrice = Math.Round(totalBookedPrice - totalTargetPrice, 2),
+                    AchievementPercentage = totalTargetPrice > 0
+                        ? Math.Round(totalBookedPrice / totalTargetPrice * 100m, 2)
+                        : 0m
+                },
+                Projects = projects
             };
         }
 
@@ -1240,6 +1347,360 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
             };
         }
 
+        public async Task<BookingTargetComparisonDashboardDto> GetBookingTargetComparisonAsync(BookingTargetComparisonQueryDto query)
+        {
+            await LoadTargetSettingsAsync();
+
+            if (query.TargetHoursPerMember < 0)
+                throw new BadRequestException("Target hours per member cannot be negative.");
+            if (query.HourlyRate < 0)
+                throw new BadRequestException("Hourly rate cannot be negative.");
+            if (query.Month.HasValue && query.Month is < 1 or > 12)
+                throw new BadRequestException("Month must be between 1 and 12.");
+
+            var calculationMode = ResolveCalculationMode(query.CalculationMode);
+            var useNet = string.Equals(calculationMode, "Net", StringComparison.OrdinalIgnoreCase);
+            var hourlyRate = query.HourlyRate;
+            var monthlyTargetHours = query.TargetHoursPerMember is > 0
+                ? query.TargetHoursPerMember.Value
+                : _monthlyHoursTargetPerMember;
+
+            var period = ResolveComparisonPeriod(query);
+            var startDate = period.StartDate.ToDateTime(TimeOnly.MinValue);
+            var endDate = period.EndDate.ToDateTime(TimeOnly.MaxValue);
+            var monthlyPeriods = BuildMonthlyPeriods(startDate, endDate);
+            var monthCount = Math.Max(1, monthlyPeriods.Count);
+
+            var hasStructureFilter =
+                (query.ProjectId.HasValue && query.ProjectId.Value != Guid.Empty) ||
+                (query.DepartmentId.HasValue && query.DepartmentId.Value != Guid.Empty) ||
+                (query.BusinessUnitId.HasValue && query.BusinessUnitId.Value != Guid.Empty) ||
+                (query.PlantId.HasValue && query.PlantId.Value != Guid.Empty);
+
+            List<Guid>? projectIds = null;
+            HashSet<Guid>? scopedUserIds = null;
+            HashSet<Guid>? scopedInternIds = null;
+            if (hasStructureFilter)
+            {
+                projectIds = await BuildProjectsQuery(new AnalyticsQueryDto
+                {
+                    ProjectId = query.ProjectId,
+                    DepartmentId = query.DepartmentId,
+                    BusinessUnitId = query.BusinessUnitId,
+                    PlantId = query.PlantId
+                }).Select(p => p.Id).ToListAsync();
+
+                scopedUserIds = (await _context.ProjectMembers
+                    .AsNoTracking()
+                    .Where(pm => projectIds.Contains(pm.ProjectId))
+                    .Select(pm => pm.UserId)
+                    .Distinct()
+                    .ToListAsync()).ToHashSet();
+
+                var bookedUserIds = await _context.HourEntries
+                    .AsNoTracking()
+                    .Where(h => h.Date >= startDate && h.Date <= endDate &&
+                                h.ProjectId.HasValue && projectIds.Contains(h.ProjectId.Value))
+                    .Select(h => h.UserId)
+                    .Distinct()
+                    .ToListAsync();
+                foreach (var userId in bookedUserIds)
+                    scopedUserIds.Add(userId);
+
+                scopedInternIds = (await _context.InternAllocations
+                    .AsNoTracking()
+                    .Where(a => projectIds.Contains(a.ProjectId))
+                    .Select(a => a.InternId)
+                    .Distinct()
+                    .ToListAsync()).ToHashSet();
+            }
+
+            var activeMembers = await _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive && u.IsApproved &&
+                            (u.MemberType == MemberType.Employee || u.MemberType == MemberType.Subcontractor) &&
+                            (u.Role == null ||
+                             (u.Role.Name.ToLower() != "intern" && u.Role.Name.ToLower() != "stagiaire")) &&
+                            !_context.Interns.Any(i => i.Name == (u.FirstName + " " + u.LastName).Trim()))
+                .Select(u => new { u.Id, u.MemberType })
+                .ToListAsync();
+
+            if (scopedUserIds != null)
+                activeMembers = activeMembers.Where(u => scopedUserIds.Contains(u.Id)).ToList();
+
+            var employeeIds = activeMembers
+                .Where(u => u.MemberType == MemberType.Employee)
+                .Select(u => u.Id)
+                .ToList();
+            var subcontractorIds = activeMembers
+                .Where(u => u.MemberType == MemberType.Subcontractor)
+                .Select(u => u.Id)
+                .ToList();
+
+            var internRecords = await _context.Interns
+                .AsNoTracking()
+                .Select(i => new { i.Id, i.Name })
+                .ToListAsync();
+            if (scopedInternIds != null)
+                internRecords = internRecords.Where(i => scopedInternIds.Contains(i.Id)).ToList();
+
+            var internNames = internRecords
+                .Select(i => i.Name.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var accountInterns = await _context.Users
+                .OfType<NormalUser>()
+                .AsNoTracking()
+                .Where(u => u.IsActive && u.IsApproved &&
+                            (u.MemberType == MemberType.intern ||
+                             (u.Role != null &&
+                              (u.Role.Name.ToLower() == "intern" || u.Role.Name.ToLower() == "stagiaire"))) &&
+                            !_context.Interns.Any(i => i.Name == (u.FirstName + " " + u.LastName).Trim()))
+                .Select(u => new { u.Id, Name = (u.FirstName + " " + u.LastName).Trim() })
+                .ToListAsync();
+
+            if (scopedUserIds != null)
+                accountInterns = accountInterns.Where(u => scopedUserIds.Contains(u.Id)).ToList();
+
+            accountInterns = accountInterns
+                .Where(u => !internNames.Contains(u.Name))
+                .ToList();
+
+            var internTableIds = internRecords.Select(i => i.Id).ToList();
+            var accountInternIds = accountInterns.Select(i => i.Id).ToList();
+            var employeeCount = employeeIds.Count;
+            var subcontractorCount = subcontractorIds.Count;
+            var internCount = internTableIds.Count + accountInternIds.Count;
+
+            var memberIds = employeeIds.Concat(subcontractorIds).ToList();
+            var memberHours = new List<(Guid UserId, int Year, int Month, CategoryWork Category, decimal Hours)>();
+            if (memberIds.Count > 0)
+            {
+                var hoursQuery = _context.HourEntries
+                    .AsNoTracking()
+                    .Where(h => h.Date >= startDate && h.Date <= endDate && memberIds.Contains(h.UserId));
+
+                if (projectIds != null)
+                    hoursQuery = hoursQuery.Where(h => h.ProjectId.HasValue && projectIds.Contains(h.ProjectId.Value));
+
+                memberHours = (await hoursQuery
+                        .Select(h => new { h.UserId, h.Date, h.Category, h.TotalHours })
+                        .ToListAsync())
+                    .Select(h => (h.UserId, h.Date.Year, h.Date.Month, h.Category, h.TotalHours))
+                    .ToList();
+            }
+
+            var internHours = await LoadInternPopulationHoursAsync(
+                startDate,
+                endDate,
+                projectIds,
+                internTableIds,
+                accountInternIds);
+
+            var employeeHours = memberHours.Where(h => employeeIds.Contains(h.UserId)).ToList();
+            var subcontractorHours = memberHours.Where(h => subcontractorIds.Contains(h.UserId)).ToList();
+
+            var employeeGross = employeeHours.Sum(h => h.Hours);
+            var employeeNet = employeeHours.Where(h => h.Category == CategoryWork.Project).Sum(h => h.Hours);
+            var subcontractorGross = subcontractorHours.Sum(h => h.Hours);
+            var internGross = internHours.Sum(h => h.Hours);
+
+            // Build per-month active-member counts from actual hours data so
+            // that the target adapts when people join or leave mid-year.
+            var employeeIdSet = employeeIds.ToHashSet();
+            var subcontractorIdSet = subcontractorIds.ToHashSet();
+
+            var employeeActiveByMonth = employeeHours
+                .GroupBy(h => (h.Year, h.Month))
+                .ToDictionary(g => g.Key, g => g.Select(x => x.UserId).Distinct().Count());
+            var subcontractorActiveByMonth = subcontractorHours
+                .GroupBy(h => (h.Year, h.Month))
+                .ToDictionary(g => g.Key, g => g.Select(x => x.UserId).Distinct().Count());
+            var internActiveByMonth = internHours
+                .GroupBy(h => (h.Year, h.Month))
+                .ToDictionary(g => g.Key, g => g.Select(x => x.InternId).Distinct().Count());
+
+            var employeeTarget = monthlyPeriods.Sum(p =>
+                monthlyTargetHours * employeeActiveByMonth.GetValueOrDefault((p.Start.Year, p.Start.Month)));
+            var subcontractorTarget = monthlyPeriods.Sum(p =>
+                monthlyTargetHours * subcontractorActiveByMonth.GetValueOrDefault((p.Start.Year, p.Start.Month)));
+            var internTarget = monthlyPeriods.Sum(p =>
+                monthlyTargetHours * internActiveByMonth.GetValueOrDefault((p.Start.Year, p.Start.Month)));
+
+            var displayEmployeeCount = monthCount == 1
+                ? employeeActiveByMonth.GetValueOrDefault((monthlyPeriods[0].Start.Year, monthlyPeriods[0].Start.Month))
+                : (employeeHours.Count > 0 ? employeeHours.Select(h => h.UserId).Distinct().Count() : employeeCount);
+
+            var displaySubcontractorCount = monthCount == 1
+                ? subcontractorActiveByMonth.GetValueOrDefault((monthlyPeriods[0].Start.Year, monthlyPeriods[0].Start.Month))
+                : (subcontractorHours.Count > 0 ? subcontractorHours.Select(h => h.UserId).Distinct().Count() : subcontractorCount);
+
+            var displayInternCount = monthCount == 1
+                ? internActiveByMonth.GetValueOrDefault((monthlyPeriods[0].Start.Year, monthlyPeriods[0].Start.Month))
+                : (internHours.Count > 0 ? internHours.Select(h => h.InternId).Distinct().Count() : internCount);
+
+            var employees = BuildPopulationComparison(
+                "Employees",
+                "employees",
+                displayEmployeeCount,
+                employeeGross,
+                employeeNet,
+                employeeTarget,
+                hourlyRate,
+                useNet);
+            var subcontractors = BuildPopulationComparison(
+                "Subcontractors",
+                "subcontractors",
+                displaySubcontractorCount,
+                subcontractorGross,
+                subcontractorGross,
+                subcontractorTarget,
+                hourlyRate,
+                useNet);
+            var interns = BuildPopulationComparison(
+                "Interns",
+                "interns",
+                displayInternCount,
+                internGross,
+                internGross,
+                internTarget,
+                hourlyRate,
+                useNet);
+            var total = BuildPopulationComparison(
+                "Total",
+                "total",
+                displayEmployeeCount + displaySubcontractorCount + displayInternCount,
+                employeeGross + subcontractorGross + internGross,
+                employeeNet + subcontractorGross + internGross,
+                employeeTarget + subcontractorTarget + internTarget,
+                hourlyRate,
+                useNet);
+
+            var employeeHoursByMonth = employeeHours
+                .GroupBy(h => (h.Year, h.Month))
+                .ToDictionary(
+                    g => g.Key,
+                    g => (
+                        Gross: g.Sum(x => x.Hours),
+                        Net: g.Where(x => x.Category == CategoryWork.Project).Sum(x => x.Hours)));
+            var subcontractorHoursByMonth = subcontractorHours
+                .GroupBy(h => (h.Year, h.Month))
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Hours));
+            var internHoursByMonth = internHours
+                .GroupBy(h => (h.Year, h.Month))
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Hours));
+
+            decimal cumulativeBooked = 0m;
+            decimal cumulativeTarget = 0m;
+            decimal cumulativeRevenue = 0m;
+            decimal cumulativeTargetRevenue = 0m;
+            decimal cumulativeGrossBooked = 0m;
+            decimal cumulativeNetBooked = 0m;
+
+            var monthlyTrend = monthlyPeriods.Select(monthPeriod =>
+            {
+                var year = monthPeriod.Start.Year;
+                var month = monthPeriod.Start.Month;
+                var key = (year, month);
+
+                employeeHoursByMonth.TryGetValue(key, out var employeeMonth);
+                var subcontractorMonthHours = subcontractorHoursByMonth.GetValueOrDefault(key);
+                var internMonthHours = internHoursByMonth.GetValueOrDefault(key);
+
+                var monthEmployeeCount = employeeActiveByMonth.GetValueOrDefault(key);
+                var monthSubcontractorCount = subcontractorActiveByMonth.GetValueOrDefault(key);
+                var monthInternCount = internActiveByMonth.GetValueOrDefault(key);
+
+                var employeeMonthMetric = BuildPopulationMonthlyMetric(
+                    monthEmployeeCount,
+                    employeeMonth.Gross,
+                    employeeMonth.Net,
+                    monthlyTargetHours * monthEmployeeCount,
+                    hourlyRate,
+                    useNet);
+                var subcontractorMonthMetric = BuildPopulationMonthlyMetric(
+                    monthSubcontractorCount,
+                    subcontractorMonthHours,
+                    subcontractorMonthHours,
+                    monthlyTargetHours * monthSubcontractorCount,
+                    hourlyRate,
+                    useNet);
+                var internMonthMetric = BuildPopulationMonthlyMetric(
+                    monthInternCount,
+                    internMonthHours,
+                    internMonthHours,
+                    monthlyTargetHours * monthInternCount,
+                    hourlyRate,
+                    useNet);
+
+                var bookedHours = employeeMonthMetric.BookedHours + subcontractorMonthMetric.BookedHours + internMonthMetric.BookedHours;
+                var targetHours = employeeMonthMetric.TargetHours + subcontractorMonthMetric.TargetHours + internMonthMetric.TargetHours;
+                var bookedRevenue = employeeMonthMetric.BookedRevenue + subcontractorMonthMetric.BookedRevenue + internMonthMetric.BookedRevenue;
+                var targetRevenue = employeeMonthMetric.TargetRevenue + subcontractorMonthMetric.TargetRevenue + internMonthMetric.TargetRevenue;
+
+                var grossBookedHours = employeeMonth.Gross + subcontractorMonthHours + internMonthHours;
+                var netBookedHours = employeeMonth.Net + subcontractorMonthHours + internMonthHours;
+
+                cumulativeBooked += bookedHours;
+                cumulativeTarget += targetHours;
+                cumulativeRevenue += bookedRevenue;
+                cumulativeTargetRevenue += targetRevenue;
+                cumulativeGrossBooked += grossBookedHours;
+                cumulativeNetBooked += netBookedHours;
+
+                var fiscalMonth = ((month - period.FiscalYearStartMonth + 12) % 12) + 1;
+
+                return new BookingTargetMonthlyTrendDto
+                {
+                    Year = year,
+                    Month = month,
+                    MonthName = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month),
+                    FiscalMonth = fiscalMonth,
+                    FiscalMonthIndex = fiscalMonth,
+                    BookedHours = Math.Round(bookedHours, 2),
+                    TargetHours = Math.Round(targetHours, 2),
+                    HoursAchievementPercentage = CalculateAchievementPercentage(bookedHours, targetHours),
+                    BookedRevenue = Math.Round(bookedRevenue, 2),
+                    TargetRevenue = Math.Round(targetRevenue, 2),
+                    RevenueAchievementPercentage = CalculateAchievementPercentage(bookedRevenue, targetRevenue),
+                    GrossBookedHours = Math.Round(grossBookedHours, 2),
+                    NetBookedHours = Math.Round(netBookedHours, 2),
+                    CumulativeBookedHours = Math.Round(cumulativeBooked, 2),
+                    CumulativeTargetHours = Math.Round(cumulativeTarget, 2),
+                    CumulativeHoursAchievementPercentage = CalculateAchievementPercentage(cumulativeBooked, cumulativeTarget),
+                    CumulativeBookedRevenue = Math.Round(cumulativeRevenue, 2),
+                    CumulativeTargetRevenue = Math.Round(cumulativeTargetRevenue, 2),
+                    CumulativeRevenueAchievementPercentage = CalculateAchievementPercentage(cumulativeRevenue, cumulativeTargetRevenue),
+                    CumulativeGrossBookedHours = Math.Round(cumulativeGrossBooked, 2),
+                    CumulativeNetBookedHours = Math.Round(cumulativeNetBooked, 2),
+                    Employees = employeeMonthMetric,
+                    Subcontractors = subcontractorMonthMetric,
+                    Interns = internMonthMetric
+                };
+            }).ToList();
+
+            var summary = BuildBookingTargetSummary(total, employees, subcontractors, interns);
+            var periodMode = string.IsNullOrWhiteSpace(query.PeriodMode)
+                ? (string.IsNullOrWhiteSpace(query.QuickSelect) ? "ytd" : query.QuickSelect.Trim().ToLowerInvariant())
+                : query.PeriodMode.Trim().ToLowerInvariant();
+
+            return new BookingTargetComparisonDashboardDto
+            {
+                Period = period,
+                FiscalYear = period.FiscalYear,
+                PeriodMode = periodMode,
+                StartDate = period.StartDate.ToString("yyyy-MM-dd"),
+                EndDate = period.EndDate.ToString("yyyy-MM-dd"),
+                HourlyRate = hourlyRate,
+                TargetHoursPerMember = Math.Round(monthlyTargetHours, 2),
+                CalculationMode = calculationMode,
+                Summary = summary,
+                Populations = new List<PopulationComparisonDto> { employees, subcontractors, interns, total },
+                MonthlyTrend = monthlyTrend
+            };
+        }
+
         public async Task<MemberTahDashboardDto> GetMemberTahDashboardAsync(MemberTahQueryDto query)
         {
             if (query.TahMonthlyHoursTarget < 0)
@@ -1453,6 +1914,241 @@ namespace PMHUB.Infrastructure.Repositories.Implementation
         {
             var ratio = effectiveness <= 1m ? effectiveness : effectiveness / 100m;
             return Math.Round(monthlyHoursTarget * ratio, 1);
+        }
+
+        private AnalyticsPeriodDto ResolveComparisonPeriod(BookingTargetComparisonQueryDto query)
+        {
+            var today = DateTime.UtcNow.Date;
+            var fiscalYearStartMonth = GetFiscalYearStartMonth();
+            var isMonthMode = IsMode(query.PeriodMode, "month") || IsMode(query.QuickSelect, "month");
+            var isFullFiscalYear = IsMode(query.PeriodMode, "fiscal_year") || IsMode(query.QuickSelect, "fiscal_year");
+            var month = query.Month is >= 1 and <= 12 ? query.Month.Value : today.Month;
+
+            int fiscalYear;
+            int calendarYear;
+            if (isMonthMode && query.Year.HasValue && query.Year.Value > 0)
+            {
+                calendarYear = query.Year.Value;
+                fiscalYear = ResolveFiscalYear(calendarYear, month, fiscalYearStartMonth);
+            }
+            else
+            {
+                fiscalYear = query.FiscalYear.GetValueOrDefault(
+                    query.Year.GetValueOrDefault(ResolveFiscalYear(today.Year, today.Month, fiscalYearStartMonth)));
+                calendarYear = month >= fiscalYearStartMonth
+                    ? fiscalYear - (fiscalYearStartMonth == 1 ? 0 : 1)
+                    : fiscalYear;
+            }
+
+            var fiscalYearStartDate = GetFiscalYearStartDate(fiscalYear, fiscalYearStartMonth);
+            var fiscalYearEndDate = fiscalYearStartDate.AddYears(1).AddTicks(-1);
+
+            DateTime startDate;
+            DateTime endDate;
+            if (isMonthMode)
+            {
+                startDate = new DateTime(calendarYear, month, 1);
+                endDate = startDate.AddMonths(1).AddTicks(-1);
+            }
+            else
+            {
+                startDate = fiscalYearStartDate;
+                endDate = isFullFiscalYear ? fiscalYearEndDate : today;
+            }
+
+            if (endDate > fiscalYearEndDate)
+                endDate = fiscalYearEndDate;
+            if (endDate < startDate)
+                endDate = startDate;
+
+            return new AnalyticsPeriodDto
+            {
+                Year = calendarYear,
+                Month = month,
+                MonthName = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month),
+                StartDate = DateOnly.FromDateTime(startDate),
+                EndDate = DateOnly.FromDateTime(endDate),
+                FiscalYear = fiscalYear,
+                FiscalYearStartMonth = fiscalYearStartMonth,
+                FiscalYearStartDate = DateOnly.FromDateTime(fiscalYearStartDate),
+                FiscalYearEndDate = DateOnly.FromDateTime(fiscalYearEndDate)
+            };
+        }
+
+        private static string ResolveCalculationMode(string? mode)
+        {
+            if (string.IsNullOrWhiteSpace(mode) ||
+                IsMode(mode, "Brut") ||
+                IsMode(mode, "Gross"))
+            {
+                return "Brut";
+            }
+
+            if (IsMode(mode, "Net"))
+                return "Net";
+
+            throw new BadRequestException("CalculationMode must be Brut or Net.");
+        }
+
+        private async Task<List<(Guid InternId, int Year, int Month, decimal Hours)>> LoadInternPopulationHoursAsync(
+            DateTime startDate,
+            DateTime endDate,
+            List<Guid>? projectIds,
+            List<Guid> internTableIds,
+            List<Guid> accountInternIds)
+        {
+            var hours = new List<(Guid InternId, int Year, int Month, decimal Hours)>();
+
+            if (internTableIds.Count > 0)
+            {
+                var directQuery = _context.InternHourEntries
+                    .AsNoTracking()
+                    .Where(e => e.Date >= startDate && e.Date <= endDate && internTableIds.Contains(e.InternAllocation.InternId));
+                if (projectIds != null)
+                    directQuery = directQuery.Where(e => projectIds.Contains(e.InternAllocation.ProjectId));
+
+                hours.AddRange((await directQuery
+                        .Select(e => new { e.InternAllocation.InternId, e.Date, e.Hours })
+                        .ToListAsync())
+                    .Select(e => (e.InternId, e.Date.Year, e.Date.Month, e.Hours)));
+
+                var supervisionQuery = _context.HourEntryInternSupervisions
+                    .AsNoTracking()
+                    .Where(s => s.HourEntry.Date >= startDate && s.HourEntry.Date <= endDate && internTableIds.Contains(s.InternAllocation.InternId));
+                if (projectIds != null)
+                    supervisionQuery = supervisionQuery.Where(s => projectIds.Contains(s.InternAllocation.ProjectId));
+
+                hours.AddRange((await supervisionQuery
+                        .Select(s => new { s.InternAllocation.InternId, s.HourEntry.Date, s.Hours })
+                        .ToListAsync())
+                    .Select(s => (s.InternId, s.Date.Year, s.Date.Month, s.Hours)));
+            }
+
+            if (accountInternIds.Count > 0)
+            {
+                var accountQuery = _context.HourEntries
+                    .AsNoTracking()
+                    .Where(h => accountInternIds.Contains(h.UserId) && h.Date >= startDate && h.Date <= endDate);
+                if (projectIds != null)
+                    accountQuery = accountQuery.Where(h => h.ProjectId.HasValue && projectIds.Contains(h.ProjectId.Value));
+
+                hours.AddRange((await accountQuery
+                        .Select(h => new { InternId = h.UserId, h.Date, Hours = h.TotalHours })
+                        .ToListAsync())
+                    .Select(h => (h.InternId, h.Date.Year, h.Date.Month, h.Hours)));
+            }
+
+            return hours;
+        }
+
+        private static PopulationComparisonDto BuildPopulationComparison(
+            string population,
+            string populationKey,
+            int people,
+            decimal grossHours,
+            decimal netHours,
+            decimal targetHours,
+            decimal hourlyRate,
+            bool useNet)
+        {
+            var bookedHours = useNet ? netHours : grossHours;
+            var remainingHours = targetHours - bookedHours;
+            var bookedRevenue = bookedHours * hourlyRate;
+            var targetRevenue = targetHours * hourlyRate;
+            var remainingRevenue = targetRevenue - bookedRevenue;
+            var grossRevenue = grossHours * hourlyRate;
+            var netRevenue = netHours * hourlyRate;
+
+            return new PopulationComparisonDto
+            {
+                Label = population,
+                Population = population,
+                PopulationKey = populationKey,
+                Headcount = people,
+                People = people,
+                BookedHours = Math.Round(bookedHours, 2),
+                TargetHours = Math.Round(targetHours, 2),
+                RemainingHours = Math.Round(remainingHours, 2),
+                VarianceHours = Math.Round(bookedHours - targetHours, 2),
+                HoursAchievementPercentage = CalculateAchievementPercentage(bookedHours, targetHours),
+                HoursAchievementPercent = CalculateAchievementPercentage(bookedHours, targetHours),
+                BookedRevenue = Math.Round(bookedRevenue, 2),
+                TargetRevenue = Math.Round(targetRevenue, 2),
+                RemainingRevenue = Math.Round(remainingRevenue, 2),
+                VarianceRevenue = Math.Round(bookedRevenue - targetRevenue, 2),
+                RevenueAchievementPercentage = CalculateAchievementPercentage(bookedRevenue, targetRevenue),
+                RevenueAchievementPercent = CalculateAchievementPercentage(bookedRevenue, targetRevenue),
+                GrossBookedHours = Math.Round(grossHours, 2),
+                NetBookedHours = Math.Round(netHours, 2),
+                GrossRevenue = Math.Round(grossRevenue, 2),
+                NetRevenue = Math.Round(netRevenue, 2),
+                GrossBookedRevenue = Math.Round(grossRevenue, 2),
+                NetBookedRevenue = Math.Round(netRevenue, 2),
+                GrossHoursAchievementPercentage = CalculateAchievementPercentage(grossHours, targetHours),
+                NetHoursAchievementPercentage = CalculateAchievementPercentage(netHours, targetHours),
+                GrossRevenueAchievementPercentage = CalculateAchievementPercentage(grossRevenue, targetRevenue),
+                NetRevenueAchievementPercentage = CalculateAchievementPercentage(netRevenue, targetRevenue)
+            };
+        }
+
+        private static PopulationMonthlyMetricDto BuildPopulationMonthlyMetric(
+            int people,
+            decimal grossHours,
+            decimal netHours,
+            decimal targetHours,
+            decimal hourlyRate,
+            bool useNet)
+        {
+            var bookedHours = useNet ? netHours : grossHours;
+            var bookedRevenue = bookedHours * hourlyRate;
+            var targetRevenue = targetHours * hourlyRate;
+            var grossRevenue = grossHours * hourlyRate;
+            var netRevenue = netHours * hourlyRate;
+
+            return new PopulationMonthlyMetricDto
+            {
+                People = people,
+                BookedHours = Math.Round(bookedHours, 2),
+                TargetHours = Math.Round(targetHours, 2),
+                HoursAchievementPercentage = CalculateAchievementPercentage(bookedHours, targetHours),
+                BookedRevenue = Math.Round(bookedRevenue, 2),
+                TargetRevenue = Math.Round(targetRevenue, 2),
+                RevenueAchievementPercentage = CalculateAchievementPercentage(bookedRevenue, targetRevenue),
+                GrossBookedHours = Math.Round(grossHours, 2),
+                NetBookedHours = Math.Round(netHours, 2),
+                GrossBookedRevenue = Math.Round(grossRevenue, 2),
+                NetBookedRevenue = Math.Round(netRevenue, 2)
+            };
+        }
+
+        private static BookingTargetSummaryDto BuildBookingTargetSummary(
+            PopulationComparisonDto total,
+            PopulationComparisonDto employees,
+            PopulationComparisonDto subcontractors,
+            PopulationComparisonDto interns)
+        {
+            return new BookingTargetSummaryDto
+            {
+                TotalPeople = total.People,
+                BookedHours = total.BookedHours,
+                TargetHours = total.TargetHours,
+                RemainingHours = total.RemainingHours,
+                VarianceHours = total.VarianceHours,
+                HoursAchievementPercentage = total.HoursAchievementPercentage,
+                BookedRevenue = total.BookedRevenue,
+                TargetRevenue = total.TargetRevenue,
+                RemainingRevenue = total.RemainingRevenue,
+                VarianceRevenue = total.VarianceRevenue,
+                RevenueAchievementPercentage = total.RevenueAchievementPercentage,
+                GrossBookedHours = total.GrossBookedHours,
+                NetBookedHours = total.NetBookedHours,
+                GrossBookedRevenue = total.GrossBookedRevenue,
+                NetBookedRevenue = total.NetBookedRevenue,
+                Employees = employees,
+                Subcontractors = subcontractors,
+                Interns = interns,
+                Total = total
+            };
         }
     }
 }

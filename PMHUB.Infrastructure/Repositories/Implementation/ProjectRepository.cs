@@ -98,9 +98,7 @@ namespace PMHUB.Infrastructure.Repositories
                  .Include(p => p.ParentProject)
                  ;
 
-        // Tracked query for UPDATE scenarios.
-        // Important: we intentionally do NOT include Department (or other heavy navigations)
-        // to avoid duplicate tracking conflicts when validating related entities separately.
+      
         private IQueryable<Project> WithUpdateIncludes() =>
             _context.Projects
                 .AsSplitQuery()
@@ -187,6 +185,17 @@ namespace PMHUB.Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(predicate)
                 .ToListAsync();
+
+        public async Task<IEnumerable<Project>> FindForHeaderNotificationsAsync(
+            Expression<Func<Project, bool>> predicate,
+            CancellationToken cancellationToken = default) =>
+            await _context.Projects
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(p => p.ProjectManager)
+                .Include(p => p.RoadblockEntries)
+                .Where(predicate)
+                .ToListAsync(cancellationToken);
 
         public async Task<(IEnumerable<Project> Items, int TotalCount)> GetPagedAsync(ProjectSearchDto query)
         {

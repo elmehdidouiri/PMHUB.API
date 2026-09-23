@@ -100,6 +100,12 @@ namespace PMHUB.Application.DTOs
         public decimal OtherHours { get; set; }
         public decimal InternManagementHours { get; set; }
         public decimal TotalHours { get; set; }
+        /// <summary>Active, non-intern members with hours in this month.</summary>
+        public int ActiveNonInternMembers { get; set; }
+        /// <summary>Configurable target hours per active non-intern member.</summary>
+        public decimal TargetHoursPerMember { get; set; }
+        /// <summary>Monthly target: ActiveNonInternMembers × TargetHoursPerMember.</summary>
+        public decimal TargetHours { get; set; }
     }
 
     public class AnalyticsUtilizationTrendDto

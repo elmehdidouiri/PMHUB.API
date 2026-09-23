@@ -68,11 +68,25 @@ namespace PMHUB.API.Controllers
             return Ok(ApiResponse<CapacityPriceDashboardDto>.Ok(result));
         }
 
+        [HttpGet("project-capacity-price")]
+        public async Task<ActionResult<ApiResponse<ProjectCapacityPriceDashboardDto>>> GetProjectCapacityPriceDashboard([FromQuery] AnalyticsQueryDto query)
+        {
+            var result = await _analyticsService.GetProjectCapacityPriceDashboardAsync(query);
+            return Ok(ApiResponse<ProjectCapacityPriceDashboardDto>.Ok(result));
+        }
+
         [HttpGet("intern-capacity-price")]
         public async Task<ActionResult<ApiResponse<InternCapacityPriceDashboardDto>>> GetInternCapacityPriceDashboard([FromQuery] InternCapacityPriceQueryDto query)
         {
             var result = await _analyticsService.GetInternCapacityPriceDashboardAsync(query);
             return Ok(ApiResponse<InternCapacityPriceDashboardDto>.Ok(result));
+        }
+
+        [HttpGet("booking-target-comparison")]
+        public async Task<ActionResult<ApiResponse<BookingTargetComparisonDashboardDto>>> GetBookingTargetComparison([FromQuery] BookingTargetComparisonQueryDto query)
+        {
+            var result = await _analyticsService.GetBookingTargetComparisonAsync(query);
+            return Ok(ApiResponse<BookingTargetComparisonDashboardDto>.Ok(result));
         }
 
         [HttpGet("member-tah")]

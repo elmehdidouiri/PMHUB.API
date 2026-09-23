@@ -45,6 +45,11 @@ namespace PMHUB.Application.Services
             return _analyticsRepository.GetCapacityPriceDashboardAsync(query);
         }
 
+        public Task<ProjectCapacityPriceDashboardDto> GetProjectCapacityPriceDashboardAsync(AnalyticsQueryDto query)
+        {
+            return _analyticsRepository.GetProjectCapacityPriceDashboardAsync(query);
+        }
+
         public Task<InternCapacityPriceDashboardDto> GetInternCapacityPriceDashboardAsync(InternCapacityPriceQueryDto query)
         {
             return _analyticsRepository.GetInternCapacityPriceDashboardAsync(query);
@@ -59,6 +64,11 @@ namespace PMHUB.Application.Services
         {
             var data = await _analyticsRepository.GetMemberTahDashboardAsync(query);
             return _excelExportService.GenerateMemberTahExcel(data);
+        }
+
+        public Task<BookingTargetComparisonDashboardDto> GetBookingTargetComparisonAsync(BookingTargetComparisonQueryDto query)
+        {
+            return _analyticsRepository.GetBookingTargetComparisonAsync(query);
         }
     }
 }

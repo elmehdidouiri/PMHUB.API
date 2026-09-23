@@ -127,12 +127,53 @@ namespace PMHUB.Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<IReadOnlyDictionary<Guid, DateTime>> GetLastBookingDatesAsync(
+            IEnumerable<Guid> userIds,
+            CancellationToken cancellationToken = default)
+        {
+            var ids = userIds.Distinct().ToList();
+            if (ids.Count == 0)
+            {
+                return new Dictionary<Guid, DateTime>();
+            }
+
+            return await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => ids.Contains(h.UserId))
+                .GroupBy(h => h.UserId)
+                .Select(g => new { UserId = g.Key, LastDate = g.Max(h => h.Date) })
+                .ToDictionaryAsync(x => x.UserId, x => x.LastDate, cancellationToken);
+        }
+
         public async Task<decimal> SumUserHoursAsync(Guid userId, DateTime from, DateTime to)
         {
             return await _context.HourEntries
                 .AsNoTracking()
                 .Where(h => h.UserId == userId && h.Date >= from.Date && h.Date <= to.Date)
                 .SumAsync(h => h.TotalHours);
+        }
+
+        public async Task<IReadOnlyDictionary<Guid, decimal>> SumHoursByUserAsync(
+            IEnumerable<Guid> userIds,
+            DateTime from,
+            DateTime to,
+            CancellationToken cancellationToken = default)
+        {
+            var ids = userIds.Distinct().ToList();
+            if (ids.Count == 0)
+            {
+                return new Dictionary<Guid, decimal>();
+            }
+
+            var fromDate = from.Date;
+            var toDate = to.Date;
+
+            return await _context.HourEntries
+                .AsNoTracking()
+                .Where(h => ids.Contains(h.UserId) && h.Date >= fromDate && h.Date <= toDate)
+                .GroupBy(h => h.UserId)
+                .Select(g => new { UserId = g.Key, Hours = g.Sum(h => h.TotalHours) })
+                .ToDictionaryAsync(x => x.UserId, x => x.Hours, cancellationToken);
         }
     }
 }
